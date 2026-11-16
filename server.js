@@ -1,16 +1,18 @@
 'use strict';
 /*
  * Arène des Openings : serveur sans dépendance (Node 18+).
- * Données : un fichier JSON dans DATA_DIR. Voir README.md.
+ * Données persistées dans PostgreSQL et fichiers audio dans Neon Object Storage.
  */
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
+const { Pool } = require('pg');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { pipeline, Transform } = require('node:stream');
 
 const PORT = Number(process.env.PORT) || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const TICK_MS = Number(process.env.TICK_MS) || 5000;
 // Durée d'un vote et prolongation en cas d'égalité, en minutes (les variables ne servent qu'aux tests).
@@ -21,32 +23,19 @@ const MAX_EXTENSIONS = process.env.MAX_EXTENSIONS ? Number(process.env.MAX_EXTEN
 const MAX_AUDIO = Math.round((Number(process.env.MAX_AUDIO_MB) || 15) * 1024 * 1024);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-if (ADMIN_PASSWORD.length < 8) {
-  console.error('ADMIN_PASSWORD est manquant ou trop court (8 caractères minimum).');
-  process.exit(1);
-}
-fs.mkdirSync(DATA_DIR, { recursive: true });
-const AUDIO_DIR = path.join(DATA_DIR, 'audio');
-fs.mkdirSync(AUDIO_DIR, { recursive: true });
-const STATE_FILE = path.join(DATA_DIR, 'state.json');
-const SECRET_FILE = path.join(DATA_DIR, 'secret.txt');
-
-let SECRET;
-try { SECRET = fs.readFileSync(SECRET_FILE, 'utf8').trim(); } catch (e) { SECRET = ''; }
-if (!SECRET) {
-  SECRET = crypto.randomBytes(32).toString('hex');
-  fs.writeFileSync(SECRET_FILE, SECRET, { mode: 0o600 });
-}
-
-/* ---------- état ---------- */
+if (ADMIN_PASSWORD.length < 8) { console.error('ADMIN_PASSWORD est manquant ou trop court (8 caractères minimum).'); process.exit(1); }
+if (!process.env.DATABASE_URL) { console.error('DATABASE_URL est manquant.'); process.exit(1); }
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 5 });
+const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
+const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
+if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
+let SECRET = process.env.SESSION_SECRET || '';
 const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, log: [] });
-let S;
-try { S = Object.assign(emptyState(), JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))); } catch (e) { S = emptyState(); }
-
+let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 function save() {
-  const tmp = STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(S));
-  fs.renameSync(tmp, STATE_FILE);
+ const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
+ saveQueue=saveQueue.catch(()=>{}).then(async()=>{ if(archive) await pool.query('INSERT INTO tournament_archives(state) VALUES ($1::jsonb)',[archive]); await pool.query('INSERT INTO app_state(id,state,updated_at) VALUES (1,$1::jsonb,now()) ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()',[snapshot]); });
+ return saveQueue;
 }
 function logIt(text) {
   S.log.push({ at: Date.now(), text: text });
@@ -266,9 +255,7 @@ function sniffAudio(b) {
   if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'webm';
   return null;
 }
-function unlinkAudio(file) {
-  if (/^[a-f0-9]{24}\.[a-z0-9]{3,4}$/.test(String(file))) fs.unlink(path.join(AUDIO_DIR, file), () => {});
-}
+function unlinkAudio(file) { if (/^[a-f0-9]{24}\.[a-z0-9]{3,4}$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression audio:',e.message)); }
 // Le fichier arrive tel quel dans le corps de la requête (pas de formulaire multipart).
 function handleUpload(req, res) {
   const vid = voterId(req);
@@ -284,7 +271,7 @@ function handleUpload(req, res) {
     req.on('end', () => sendJson(res, 413, { error: 'Fichier trop gros : ' + Math.round(MAX_AUDIO / 1048576) + ' Mo maximum.' }));
     return req.resume();
   }
-  const tmp = path.join(AUDIO_DIR, 'tmp-' + crypto.randomBytes(8).toString('hex'));
+  const tmp = path.join(os.tmpdir(), 'arene-' + crypto.randomBytes(8).toString('hex'));
   let size = 0, head = Buffer.alloc(0);
   const meter = new Transform({
     transform(chunk, enc, cb) {
@@ -294,7 +281,7 @@ function handleUpload(req, res) {
       cb(null, chunk);
     }
   });
-  pipeline(req, meter, fs.createWriteStream(tmp), (err) => {
+  pipeline(req, meter, fs.createWriteStream(tmp), async (err) => {
     if (err) {
       fs.unlink(tmp, () => {});
       if (res.headersSent) return;
@@ -307,33 +294,22 @@ function handleUpload(req, res) {
     }
     const file = crypto.randomBytes(12).toString('hex') + '.' + ext;
     try {
-      fs.renameSync(tmp, path.join(AUDIO_DIR, file));
+      const bytes = await fs.promises.readFile(tmp);
+      await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: file, Body: bytes, ContentType: AUDIO_TYPES[ext] }));
       if (S.uploads[vid]) unlinkAudio(S.uploads[vid].file);
-      S.uploads[vid] = { file: file, size: size };
-      save();
+      S.uploads[vid] = { file: file, size: size }; await save();
     } catch (e) { console.error(e); return sendJson(res, 500, { error: 'Impossible d\'enregistrer le fichier.' }); }
+    finally { fs.unlink(tmp, () => {}); }
     sendJson(res, 200, { ok: true, file: file });
   });
 }
-function serveAudio(req, res, file) {
-  const fp = path.join(AUDIO_DIR, file);
-  fs.stat(fp, (err, st) => {
-    if (err || !st.isFile()) { res.writeHead(404, SEC); return res.end('Introuvable'); }
-    const head = Object.assign({ 'Content-Type': AUDIO_TYPES[path.extname(file).slice(1)], 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=86400, immutable' }, SEC);
-    let start = 0, end = st.size - 1, status = 200;
-    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
-    if (m && (m[1] || m[2])) {
-      if (m[1] === '') start = Math.max(0, st.size - Number(m[2]));
-      else { start = Number(m[1]); if (m[2] !== '') end = Math.min(end, Number(m[2])); }
-      if (start > end || start >= st.size) { res.writeHead(416, Object.assign({ 'Content-Range': 'bytes */' + st.size }, SEC)); return res.end(); }
-      status = 206;
-      head['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
-    }
-    head['Content-Length'] = end - start + 1;
-    res.writeHead(status, head);
-    if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(fp, { start: start, end: end }).pipe(res);
-  });
+async function serveAudio(req,res,file){
+ try{const range=String(req.headers.range||'');const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})}));
+ const h=Object.assign({'Content-Type':obj.ContentType||AUDIO_TYPES[path.extname(file).slice(1)]||'application/octet-stream','Accept-Ranges':'bytes','Cache-Control':'public, max-age=86400, immutable'},SEC);
+ if(obj.ContentLength!=null)h['Content-Length']=obj.ContentLength;if(obj.ContentRange)h['Content-Range']=obj.ContentRange;res.writeHead(obj.ContentRange?206:200,h);
+ if(req.method==='HEAD'){if(obj.Body&&obj.Body.destroy)obj.Body.destroy();return res.end();}
+ if(obj.Body&&obj.Body.pipe)obj.Body.pipe(res);else res.end(Buffer.from(await obj.Body.transformToByteArray()));
+ }catch(e){if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');}console.error('Lecture audio:',e);if(!res.headersSent){res.writeHead(502,SEC);res.end('Audio indisponible');}}
 }
 
 const routes = {
@@ -484,7 +460,7 @@ const routes = {
   },
   'POST /api/admin/reset': (req, res, body) => {
     if (body.confirm !== 'NOUVEAU') fail(400, 'Tape NOUVEAU pour confirmer.');
-    fs.writeFileSync(path.join(DATA_DIR, 'archive-' + Date.now() + '.json'), JSON.stringify(S));
+    pendingArchive = JSON.stringify(S);
     const codes = S.codes.map((c) => Object.assign({}, c));
     S = emptyState();
     S.codes = codes;
@@ -547,7 +523,7 @@ const server = http.createServer(async (req, res) => {
         body = await readBody(req);
       }
       closeExpired();
-      return sendJson(res, 200, fn(req, res, body));
+      const result = await fn(req, res, body); await saveQueue; return sendJson(res, 200, result);
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, SEC); return res.end(); }
     return serveStatic(req, res, url.pathname);
@@ -558,5 +534,12 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-setInterval(closeExpired, TICK_MS).unref();
-server.listen(PORT, () => console.log('Arène des Openings sur http://localhost:' + PORT));
+setInterval(closeExpired,TICK_MS).unref();
+async function start(){
+ const cfg=await pool.query('SELECT value FROM app_config WHERE key=$1',['session_secret']);
+ if(!SECRET){SECRET=cfg.rows[0]&&cfg.rows[0].value;if(!SECRET){SECRET=crypto.randomBytes(48).toString('hex');await pool.query('INSERT INTO app_config(key,value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING',['session_secret',SECRET]);}}
+ const r=await pool.query('SELECT state FROM app_state WHERE id=1');
+ if(r.rows.length)S=Object.assign(emptyState(),r.rows[0].state);else await pool.query('INSERT INTO app_state(id,state) VALUES (1,$1::jsonb)',[JSON.stringify(S)]);
+ server.listen(PORT,()=>console.log('Arène des Openings sur le port '+PORT));
+}
+start().catch(e=>{console.error('Initialisation impossible:',e);process.exit(1);});
