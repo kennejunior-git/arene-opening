@@ -450,7 +450,8 @@ const routes = {
         return { title, anime, file: up.file, duration: Number(up.duration || 0), order };
       });
       if (new Set(videos.map(v => v.order)).size !== 3) fail(400, 'Chaque vidéo doit avoir un ordre de passage différent (1, 2 et 3).');
-      S.entrants[vid] = { name, title: videos[0].title, anime: videos[0].anime, videos };
+      const firstVideo = videos.find(v => v.order === 1) || videos[0];
+      S.entrants[vid] = { name, title: firstVideo.title, anime: firstVideo.anime, videos };
       delete S.videoUploads[vid];
       save();
       return { ok: true };
