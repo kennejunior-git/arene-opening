@@ -23,7 +23,7 @@
         if (!p) throw new Error('Ce profil est introuvable.');
         $('profile').hidden = false;
         $('profile').innerHTML = '<p class="eyebrow">Profil joueur</p><h2>' + esc(p.name) + '</h2><div class="profile-stats"><div><strong>' + p.points + '</strong><span>points au total</span></div><div><strong>' + p.wins + '</strong><span>duels gagnés</span></div><div><strong>' + p.tournaments + '</strong><span>tournois joués</span></div></div>' +
-          '<h3>Historique des openings</h3>' + (p.history.length ? '<ul class="history">' + p.history.map(function (e) { return '<li><strong>' + esc(e.title) + '</strong><span>' + esc(e.anime) + ' · ' + esc(e.tournament) + '</span></li>'; }).join('') + '</ul>' : '<p class="note">Aucun tournoi terminé dans l’historique.</p>') +
+          '<h3>Badges et distinctions</h3>' + (p.badges.length ? '<div class="badge-grid">' + p.badges.map(function (b) { return '<div class="player-badge"><span class="badge-icon">' + b.icon + '</span><strong>' + esc(b.name) + '</strong><small>' + esc(b.detail) + '</small></div>'; }).join('') + '</div>' : '<p class="note">Pas encore de badge. Continue à participer et à gagner des duels !</p>') + '<h3>Historique des openings</h3>' + (p.history.length ? '<ul class="history">' + p.history.map(function (e) { return '<li><strong>' + esc(e.title) + '</strong><span>' + esc(e.anime) + ' · ' + esc(e.tournament) + '</span></li>'; }).join('') + '</ul>' : '<p class="note">Aucun tournoi terminé dans l’historique.</p>') +
           '<a href="/community" class="chip">Voir tous les classements</a>';
       }
       $('notice').textContent = '';
