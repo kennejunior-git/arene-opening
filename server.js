@@ -30,7 +30,7 @@ const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
 const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
 if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
 let SECRET = process.env.SESSION_SECRET || '';
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, bonuses: [], log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 function save() {
  const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
@@ -344,6 +344,7 @@ const routes = {
   },
   'POST /api/logout': (req, res) => { setCookie(req, res, 'v', '', 0); return { ok: true }; },
   'GET /api/state': (req) => publicState(voterId(req)),
+  'GET /api/community': async (req) => { const u = new URL(req.url, 'http://x'); const id = String(u.searchParams.get('player') || ''); if (id && !/^[a-f0-9]{16}$/.test(id)) fail(400, 'Profil invalide.'); return communityData(id || null); },
 
   'POST /api/entry': (req, res, body) => {
     const vid = voterId(req);
@@ -470,6 +471,61 @@ const routes = {
   }
 };
 
+/* ---------- communauté et classements ---------- */
+function tournamentKey(state) {
+  return state && state.t ? String(state.t.createdAt || '') + '|' + String(state.t.name || '') : '';
+}
+function scoreTournament(state, totals, entries) {
+  if (!state || !state.t) return;
+  const key = tournamentKey(state);
+  for (const [uid, entry] of Object.entries(state.entrants || {})) {
+    if (!entries[uid]) entries[uid] = [];
+    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: state.t.status || '' });
+    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    totals[uid].tournaments.add(key);
+  }
+  for (const m of Object.values(state.matches || {})) {
+    if (!m || m.status !== 'clos' || m.bye || !m.winnerSlot) continue;
+    const pair = (state.pairings || {})[m.id];
+    if (!pair) continue;
+    const uid = m.winnerSlot === m.a.slot ? pair.aUid : pair.bUid;
+    if (!uid) continue;
+    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    totals[uid].wins++;
+    if (state === S) totals[uid].seasonWins++;
+  }
+}
+async function communityData(playerId) {
+  const archived = await pool.query('SELECT state FROM tournament_archives ORDER BY archived_at DESC');
+  const states = archived.rows.map((r) => r.state).concat([S]);
+  const totals = {}, entries = {};
+  states.forEach((state) => scoreTournament(state, totals, entries));
+  const key = tournamentKey(S), players = [];
+  const bonusRows = Array.isArray(S.bonuses) ? S.bonuses : [];
+  for (const code of S.codes) {
+    if (!code.name) continue;
+    const t = totals[code.id] || { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    const allBonus = bonusRows.filter((b) => b.playerId === code.id).reduce((n, b) => n + Number(b.points || 0), 0);
+    const seasonBonus = bonusRows.filter((b) => b.playerId === code.id && b.tournamentKey === key).reduce((n, b) => n + Number(b.points || 0), 0);
+    players.push({
+      id: code.id, name: code.name, wins: t.wins, seasonWins: t.seasonWins,
+      bonus: allBonus, seasonBonus: seasonBonus, points: t.wins * 3 + allBonus,
+      seasonPoints: t.seasonWins * 3 + seasonBonus, tournaments: t.tournaments.size
+    });
+  }
+  const sort = (a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name, 'fr');
+  const season = players.slice().sort((a, b) => b.seasonPoints - a.seasonPoints || b.seasonWins - a.seasonWins || a.name.localeCompare(b.name, 'fr'));
+  const allTime = players.slice().sort(sort);
+  const out = { seasonName: S.t ? S.t.name : 'Saison actuelle', season, allTime };
+  if (playerId) {
+    const p = players.find((x) => x.id === playerId);
+    if (!p) return Object.assign(out, { profile: null });
+    const history = (entries[playerId] || []).filter((e) => e.status === 'termine' || e.status === 'archive');
+    out.profile = Object.assign({}, p, { history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
+  }
+  return out;
+}
+
 /* ---------- HTTP ---------- */
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const SEC = {
@@ -496,7 +552,7 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 function serveStatic(req, res, pathname) {
-  let p = pathname === '/' ? '/index.html' : pathname === '/admin' ? '/admin.html' : pathname === '/stats' ? '/stats.html' : pathname;
+  let p = pathname === '/' ? '/index.html' : pathname === '/admin' ? '/admin.html' : pathname === '/stats' ? '/stats.html' : pathname === '/community' ? '/community.html' : pathname;
   const file = path.normalize(path.join(PUBLIC_DIR, p));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(404, SEC); return res.end('Introuvable'); }
   fs.readFile(file, (err, data) => {
