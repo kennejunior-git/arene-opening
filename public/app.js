@@ -8,7 +8,7 @@
   };
 
   var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '';
-  var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1;
+  var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1, registrationBusy = false;
   var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', clos: 'Terminé' };
 
   function now() { return Date.now() + offset; }
@@ -150,6 +150,7 @@
 
   
   function renderReg() {
+    if (registrationBusy) return;
     var el = $('reg');
     if (!S || !S.t || !S.me) { el.hidden = true; lastRegKey = ''; return; }
     var key = JSON.stringify([S.t.status, S.t.mediaMode, S.me.entry, S.me.videoUploads, regMsg, regErr, S.matches.length]);
@@ -442,6 +443,7 @@
       regMsg = ''; regErr = '';
       var btn = f.querySelector('button[type=submit]'), upmsg = $('upmsg');
       try {
+        registrationBusy = true;
         btn.disabled = true;
         if (S.t && S.t.mediaMode === 'video3') {
           var videos = [];
@@ -450,7 +452,10 @@
             if (file) {
               if (file.size > 60 * 1048576) throw new Error('La vidéo ' + i + ' dépasse 60 Mo.');
               if (!/^video\/(mp4|quicktime)$/.test(file.type) && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
-              await uploadVideo(file, i, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + i + '… ' + p + ' %'; });
+              var slot = i;
+              var uploaded = await uploadVideo(file, slot, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + slot + '… ' + p + ' %'; });
+              if (!uploaded || !uploaded.file) throw new Error('La vidéo ' + slot + ' n’a pas été confirmée par le serveur.');
+              upmsg.textContent = 'Vidéo ' + slot + ' enregistrée. Préparation de la suite…';
             }
             videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value, order: Number(f.elements['order' + i].value) });
           }
@@ -468,7 +473,7 @@
         }
         regMsg = 'Inscription enregistrée.';
       } catch (er) { regErr = er.message; }
-      btn.disabled = false; lastRegKey = ''; await load();
+      btn.disabled = false; registrationBusy = false; lastRegKey = ''; await load();
     }
   });
 
