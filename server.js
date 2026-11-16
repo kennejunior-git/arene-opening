@@ -374,6 +374,26 @@ async function serveAudio(req,res,file){
  }catch(e){if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');}console.error('Lecture audio:',e);if(!res.headersSent){res.writeHead(502,SEC);res.end('Audio indisponible');}}
 }
 
+function adminVideoList() {
+  const items = new Map();
+  const add = (vid, v, source) => {
+    if (!v || !/^[a-f0-9]{24}\.mp4$/.test(String(v.file || ''))) return;
+    const code = codeOf(vid), entrant = S.entrants[vid] || {};
+    const old = items.get(v.file) || { file:v.file, playerName:code && code.name || entrant.name || 'Participant', title:v.title || '', anime:v.anime || '', order:v.order || null, size:Number(v.size || 0), duration:Number(v.duration || 0), sources:[] };
+    if (v.title) old.title=v.title; if (v.anime) old.anime=v.anime; if (v.order) old.order=v.order;
+    if (v.size) old.size=Number(v.size); if (v.duration) old.duration=Number(v.duration);
+    if (!old.sources.includes(source)) old.sources.push(source);
+    items.set(v.file,old);
+  };
+  for (const [vid,group] of Object.entries(S.videoUploads || {})) for (const [slot,v] of Object.entries(group || {})) add(vid,v,'Dépôt '+slot);
+  for (const [vid,e] of Object.entries(S.entrants || {})) (e.videos || []).forEach((v,i)=>add(vid,v,'Vidéo de tournoi '+(i+1)));
+  for (const m of Object.values(S.matches || {})) [m.a,m.b].forEach(side=>{
+    if (!side) return;
+    const pair=S.pairings[m.id], vid=pair && (side.slot===m.a.slot?pair.aUid:pair.bUid);
+    (side.videos || []).forEach((v,i)=>add(vid,v,'Affrontement '+m.id+' · vidéo '+(i+1)));
+  });
+  return Array.from(items.values()).sort((x,y)=>x.playerName.localeCompare(y.playerName,'fr'));
+}
 const routes = {
   'POST /api/redeem': (req, res, body) => {
     const ip = 'code:' + clientIp(req);
@@ -614,6 +634,24 @@ const routes = {
     st.prizePayouts = S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts : [];
     st.bonuses = Array.isArray(S.bonuses) ? S.bonuses : [];
     return st;
+  },
+  'POST /api/admin/video/delete': async (req, res, body) => {
+    const file=String(body.file || ''), reason=clean(body.reason,200);
+    if (!/^[a-f0-9]{24}\.mp4$/.test(file)) fail(400,'Vidéo invalide.');
+    if (body.confirm !== 'SUPPRIMER VIDEO') fail(400,'Confirmation incorrecte.');
+    if (reason.length<3) fail(400,'Indique le motif de suppression.');
+    if (!adminVideoList().some(v=>v.file===file)) fail(404,'Cette vidéo n’est plus disponible.');
+    await s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file}));
+    const keys=new Set([file]);
+    clearAudioRefs(S,keys);
+    const archives=await pool.query('SELECT id,state FROM tournament_archives');
+    for (const row of archives.rows) {
+      const state=row.state; clearAudioRefs(state,keys);
+      await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2',[JSON.stringify(state),row.id]);
+    }
+    logIt('Vidéo supprimée par modération : '+reason+'. Fichier '+file+'.');
+    await save();
+    return {ok:true};
   },
   'POST /api/admin/create': (req, res, body) => {
     if (S.t) fail(409, 'Un tournoi existe déjà. Utilise « Nouveau tournoi ».');
