@@ -175,17 +175,17 @@
     h += '</section>';
 
     /* nettoyage des archives audio */
-    h += '<section class="panel"><h2>Libérer le stockage audio</h2><p class="lead">Supprime uniquement les audios des tournois archivés sélectionnés. Les résultats, les votes, les vainqueurs et les statistiques restent conservés. Les fichiers utilisés par le tournoi actif ou une autre archive sont protégés.</p>';
+    h += '<section class="panel"><h2>Libérer le stockage audio et vidéo</h2><p class="lead">Supprime uniquement les fichiers audio et vidéo des tournois archivés sélectionnés. Les résultats, les votes, les vainqueurs et les statistiques restent conservés. Les fichiers utilisés par le tournoi actif ou une autre archive sont protégés.</p>';
     if (storageErr) h += '<p class="err">' + esc(storageErr) + '</p>';
     var archives = storage && storage.archives ? storage.archives : [];
     if (!archives.length) h += '<p class="note">Aucun tournoi archivé pour le moment.</p>';
     archives.forEach(function (ar) {
       var size = ar.bytes < 1048576 ? Math.round(ar.bytes / 1024) + ' Ko' : (ar.bytes / 1048576).toFixed(1) + ' Mo';
       h += '<div class="block"><p><strong>' + esc(ar.name) + '</strong> <span class="chip">Archive #' + ar.id + '</span></p>' +
-        '<p class="note">' + ar.audioCount + ' audio(s) référencé(s) · ' + ar.deletableCount + ' supprimable(s) · ' + ar.sharedCount + ' partagé(s) protégé(s) · environ ' + size + ' libérables' +
+        '<p class="note">' + ar.audioCount + ' fichier(s) audio/vidéo référencé(s) · ' + ar.deletableCount + ' supprimable(s) · ' + ar.sharedCount + ' partagé(s) protégé(s) · environ ' + size + ' libérables' +
         (ar.pendingCount ? ' · ' + ar.pendingCount + ' suppression(s) à reprendre' : '') + '</p>';
       if (ar.deletableCount || ar.pendingCount) {
-        h += '<form class="stack storageForm"><input type="hidden" name="archiveId" value="' + ar.id + '"><label for="storageConfirm' + ar.id + '">Pour confirmer, tape SUPPRIMER AUDIO</label>' +
+        h += '<form class="stack storageForm"><input type="hidden" name="archiveId" value="' + ar.id + '"><label for="storageConfirm' + ar.id + '">Pour confirmer, tape SUPPRIMER MÉDIAS</label>' +
           '<input id="storageConfirm' + ar.id + '" name="confirm" autocomplete="off" placeholder="SUPPRIMER AUDIO" required>' +
           '<button class="btn small" type="submit"' + dis + '>Supprimer les audios de cette archive</button></form>';
       }
