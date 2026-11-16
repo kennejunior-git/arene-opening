@@ -384,7 +384,7 @@
             var file = f.elements['video' + i].files[0];
             if (file) {
               if (file.size > 60 * 1048576) throw new Error('La vidéo ' + i + ' dépasse 60 Mo.');
-              if (!/^video\\/(mp4|quicktime)$/.test(file.type) && !/\\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
+              if (!/^video\/(mp4|quicktime)$/.test(file.type) && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
               await uploadVideo(file, i, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + i + '… ' + p + ' %'; });
             }
             videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value });
