@@ -32,6 +32,7 @@
     var pct = total ? Math.round(100 * n / total) : 0;
     return '<div class="side s' + pos + (won ? ' win' : '') + '"><h4>' + esc(side.title) + '</h4><p class="oanime">' + esc(side.anime) +
       (reveal ? ' · <strong>' + esc(reveal) + '</strong>' : '') + (won ? ' <span class="chip ok">Qualifié</span>' : '') + '</p>' +
+      (side.audio ? '<audio controls preload="none" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
       '<div class="track"><div class="fill" style="width:' + pct + '%"></div></div>' +
       '<p class="nums"><span>' + plural(n, 'voix', 'voix') + '</span><span>' + pct + ' %</span></p>' +
       (voters && voters.length ? '<details class="voters"><summary>Voir les ' + plural(voters.length, 'votant', 'votants') + '</summary><p>' + voters.map(esc).join(', ') + '</p></details>' : '') + '</div>';
@@ -138,5 +139,8 @@
   }, 1000);
   setInterval(load, 5000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+  document.addEventListener('play', function (e) {
+    document.querySelectorAll('audio').forEach(function (a) { if (a !== e.target) a.pause(); });
+  }, true);
   render(); load();
 })();

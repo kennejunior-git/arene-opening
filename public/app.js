@@ -44,6 +44,21 @@
     return 'Tour ' + r;
   }
 
+  function uploadAudio(file, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open('POST', '/api/audio');
+      x.setRequestHeader('Content-Type', 'application/octet-stream');
+      x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(Math.round(100 * e.loaded / e.total)); };
+      x.onload = function () {
+        var j = {}; try { j = JSON.parse(x.responseText); } catch (e) { /* vide */ }
+        if (x.status >= 200 && x.status < 300) resolve(j); else reject(new Error(j.error || 'Envoi impossible.'));
+      };
+      x.onerror = function () { reject(new Error('Envoi interrompu. Vérifie ta connexion et réessaie.')); };
+      x.send(file);
+    });
+  }
+
   async function api(path, body) {
     var r = await fetch(path, {
       method: body ? 'POST' : 'GET',
@@ -130,8 +145,13 @@
         '<label for="f-name">Ton pseudo (affiché après le duel)</label><input id="f-name" name="name" maxlength="40" required value="' + esc(v.name) + '">' +
         '<label for="f-anime">Anime</label><input id="f-anime" name="anime" maxlength="60" required value="' + esc(v.anime) + '">' +
         '<label for="f-title">Titre de l\'opening</label><input id="f-title" name="title" maxlength="80" required value="' + esc(v.title) + '">' +
-        '<label for="f-link">Lien pour l\'écouter</label><input id="f-link" name="link" type="url" inputmode="url" maxlength="300" placeholder="https://" required value="' + esc(v.link) + '">' +
+        '<label for="f-audio">Fichier audio de ton opening</label>' +
+        (v.audio ? '<p class="okmsg">Fichier déjà envoyé. Tu peux l\'écouter ci-dessous, ou en choisir un autre pour le remplacer.</p><audio controls preload="none" src="/audio/' + esc(v.audio) + '"></audio>' : '') +
+        '<input id="f-audio" name="audio" type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac">' +
+        '<p class="hint">Formats : mp3, m4a, ogg/opus, wav, aac, flac. ' + (S.cfg ? S.cfg.maxAudioMb : 15) + ' Mo maximum. Sur iPhone, mp3 et m4a sont les plus sûrs.</p>' +
+        '<label for="f-link">Ou un lien pour l\'écouter (facultatif si tu envoies un fichier)</label><input id="f-link" name="link" type="url" inputmode="url" maxlength="300" placeholder="https://" value="' + esc(v.link) + '">' +
         '<button class="btn primary" type="submit">' + (e ? 'Mettre à jour' : 'Enregistrer mon inscription') + '</button>' +
+        '<p class="note" id="upmsg" role="status"></p>' +
         (regMsg ? '<p class="okmsg">' + esc(regMsg) + '</p>' : '') + (regErr ? '<p class="err">' + esc(regErr) + '</p>' : '') + '</form>';
     } else if (e && e.matchId) {
       var m = S.matches.find(function (x) { return x.id === e.matchId; });
@@ -163,7 +183,8 @@
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(side.title) + '</p><p class="oanime">' + esc(side.anime) + '</p>' +
-      '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Écouter sur ' + esc(hostOf(u)) + ' ↗</a>' : '') +
+      (side.audio ? '<audio controls preload="none" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
+      '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p></div>';
     if (mode === 'vote') {
       if (m.liveTally) {
@@ -294,8 +315,18 @@
       regMsg = ''; regErr = '';
       var d = {};
       ['name', 'anime', 'title', 'link'].forEach(function (k) { d[k] = f.elements[k].value; });
-      try { await api('/api/entry', d); regMsg = 'Inscription enregistrée.'; }
-      catch (er) { regErr = er.message; }
+      var file = f.elements.audio.files[0], btn = f.querySelector('button[type=submit]'), up = $('upmsg');
+      try {
+        if (file) {
+          var max = (S && S.cfg ? S.cfg.maxAudioMb : 15) * 1048576;
+          if (file.size > max) throw new Error('Ce fichier fait ' + (file.size / 1048576).toFixed(1) + ' Mo. Le maximum est ' + Math.round(max / 1048576) + ' Mo.');
+          btn.disabled = true;
+          await uploadAudio(file, function (p) { up.textContent = 'Envoi du fichier… ' + p + ' %'; });
+          up.textContent = 'Fichier reçu.';
+        }
+        await api('/api/entry', d);
+        regMsg = 'Inscription enregistrée.';
+      } catch (er) { regErr = er.message; }
       lastRegKey = '';
       await load();
     }
@@ -313,6 +344,10 @@
   }, 1000);
   setInterval(load, 10000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+
+  document.addEventListener('play', function (e) {
+    document.querySelectorAll('audio').forEach(function (a) { if (a !== e.target) a.pause(); });
+  }, true);
 
   renderAll();
   load();

@@ -13,7 +13,7 @@ Test automatique : `npm test`.
 
 ## Mettre en ligne
 
-Il faut un hébergeur qui fait tourner Node **et garde un disque persistant** (Render avec disque, Railway avec volume, Fly.io avec volume, ou un petit serveur VPS). Sur un hébergement gratuit sans disque, les données s'effacent à chaque redémarrage.
+Il faut un hébergeur qui fait tourner Node **et garde un disque persistant** (Render avec disque, Railway avec volume, Fly.io avec volume, ou un petit serveur VPS). Sur un hébergement gratuit sans disque, les données **et les fichiers audio** s'effacent à chaque redémarrage.
 
 1. Mets ce dossier sur GitHub (ou envoie-le directement selon l'hébergeur).
 2. Crée un « Web Service » Node. Commande de démarrage : `node server.js`. Pas de commande de build.
@@ -26,13 +26,15 @@ Il faut un hébergeur qui fait tourner Node **et garde un disque persistant** (R
 ## Déroulé d'un tournoi
 
 1. `/admin` : crée le tournoi, génère un code par membre du groupe, envoie chaque code en privé.
-2. Chaque personne entre son code et choisit un pseudo (une seule fois). Les participants inscrivent ensuite leur opening (anime, titre, lien).
+2. Chaque personne entre son code et choisit un pseudo (une seule fois). Les participants inscrivent ensuite leur opening : anime, titre et **fichier audio** (ou un lien à la place). Le site range les fichiers dans le dossier `audio` de `DATA_DIR` et les joue directement dans le duel.
 3. Tu fermes les inscriptions : le serveur tire les binômes au hasard.
 4. Tu ouvres les votes, duel par duel ou tous d'un coup. Un vote dure **15 minutes**. Tu peux cocher « score en direct » ; sinon le score reste caché jusqu'à la clôture.
 5. À l'heure, le serveur compte et publie tout seul. En cas d'égalité, **5 minutes** s'ajoutent automatiquement. Après 6 prolongations sans départage, le serveur tire le gagnant au sort et l'écrit dans le journal.
 6. Quand tous les duels du tour sont terminés, tu lances le tour suivant, jusqu'à la finale.
 
 La page `/stats` montre les votes en direct (nombre de votes, jamais les noms pendant le vote), les duels terminés avec la liste des pseudos des votants, et les chiffres du tournoi.
+
+Fichiers audio : mp3, m4a, ogg/opus, wav, aac et flac, 15 Mo au maximum (variable `MAX_AUDIO_MB`). Le serveur vérifie le vrai contenu du fichier, pas seulement son extension. Le nom d'origine n'est jamais conservé ni affiché, pour ne pas trahir l'auteur. Les fichiers ne deviennent visibles qu'après le tirage au sort, dans leur duel. Sur iPhone, mp3 et m4a se lisent partout ; ogg/opus (les notes vocales WhatsApp) ne passe que sur les iOS récents.
 
 Les durées se changent avec les variables `VOTE_MINUTES`, `EXTEND_MINUTES` et `MAX_EXTENSIONS` (utile pour tester avec des durées courtes).
 

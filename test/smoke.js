@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const PORT = 3900 + Math.floor(Math.random() * 90);
 const BASE = 'http://127.0.0.1:' + PORT;
@@ -14,7 +15,7 @@ const WAIT = 3800; // un peu plus que 3 s
 
 function client() {
   let cookie = '';
-  return async (method, url, body) => {
+  const fn = async (method, url, body) => {
     const r = await fetch(BASE + url, {
       method: method,
       headers: Object.assign({ cookie: cookie }, method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
@@ -29,13 +30,21 @@ function client() {
     let j = {}; try { j = await r.json(); } catch (e) { /* vide */ }
     return { status: r.status, body: j };
   };
+  return Object.assign(fn, {
+    // envoi d'un fichier brut, comme le fait la page
+    raw: async (url, buf) => {
+      const r = await fetch(BASE + url, { method: 'POST', headers: { cookie: cookie, 'Content-Type': 'application/octet-stream' }, body: buf });
+      let j = {}; try { j = await r.json(); } catch (e) { /* vide */ }
+      return { status: r.status, body: j };
+    }
+  });
 }
 
 (async () => {
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: Object.assign({}, process.env, {
       PORT: String(PORT), DATA_DIR: dataDir, ADMIN_PASSWORD: 'motdepasse-test', TICK_MS: '200',
-      VOTE_MINUTES: '0.05', EXTEND_MINUTES: '0.05', MAX_EXTENSIONS: '1'
+      VOTE_MINUTES: '0.05', EXTEND_MINUTES: '0.05', MAX_EXTENSIONS: '1', MAX_AUDIO_MB: '1'
     }),
     stdio: ['ignore', 'inherit', 'inherit']
   });
@@ -74,10 +83,37 @@ function client() {
     assert.equal((await client()('POST', '/api/entry', { name: 'x', anime: 'x', title: 'x', link: 'https://x.fr' })).status, 401, 'inscription sans code refusée');
     assert.equal((await people[5]('GET', '/api/state')).body.me.name, 'Votant5');
 
+    // --- fichiers audio ---
+    const fake = (head) => Buffer.concat([Buffer.from(head, 'latin1'), crypto.randomBytes(4000)]);
+    const ogg = fake('OggS'), mp3 = fake('ID3');
+    assert.equal((await client().raw('/api/audio', ogg)).status, 401, 'envoi sans code refusé');
+    assert.equal((await people[0].raw('/api/audio', Buffer.from('ceci est du texte, pas un audio. '.repeat(100)))).status, 415, 'fichier non audio refusé');
+    assert.equal((await people[0].raw('/api/audio', Buffer.concat([Buffer.from('OggS'), crypto.randomBytes(1.3 * 1048576)]))).status, 413, 'fichier trop gros refusé');
+    assert.equal((await people[2]('POST', '/api/entry', { name: 'x', anime: 'y', title: 'z', link: '' })).status, 400, 'ni audio ni lien refusé');
+    const up0 = await people[0].raw('/api/audio', ogg);
+    assert.equal(up0.status, 200); assert.match(up0.body.file, /^[a-f0-9]{24}\.ogg$/);
+    const up1 = await people[1].raw('/api/audio', mp3);
+    assert.equal(up1.status, 200); assert.match(up1.body.file, /\.mp3$/);
+    // le fichier envoyé n'est pas encore public tant que l'inscription n'est pas faite
     for (let i = 0; i < 5; i++) {
-      const r = await people[i]('POST', '/api/entry', { name: 'Pseudo' + i, anime: 'Anime' + i, title: 'Opening' + i, link: 'https://youtu.be/abc' + i });
-      assert.equal(r.status, 200);
+      const r = await people[i]('POST', '/api/entry', { name: 'Pseudo' + i, anime: 'Anime' + i, title: 'Opening' + i, link: i === 0 ? '' : 'https://youtu.be/abc' + i });
+      assert.equal(r.status, i === 0 || i === 1 ? 200 : 200);
     }
+    const me0 = (await people[0]('GET', '/api/state')).body.me.entry;
+    assert.equal(me0.audio, up0.body.file, 'le fichier est rattaché à l\'inscription');
+    assert.equal(me0.link, null);
+    // mise à jour sans nouveau fichier : l'audio est conservé
+    assert.equal((await people[0]('POST', '/api/entry', { name: 'Pseudo0', anime: 'Anime0', title: 'Opening0', link: '' })).status, 200);
+    assert.equal((await people[0]('GET', '/api/state')).body.me.entry.audio, up0.body.file, 'audio conservé');
+    // lecture : type, taille et reprise (Range)
+    let f = await fetch(BASE + '/audio/' + up0.body.file);
+    assert.equal(f.status, 200); assert.equal(f.headers.get('content-type'), 'audio/ogg');
+    assert.equal(Buffer.from(await f.arrayBuffer()).equals(ogg), true, 'le fichier est rendu à l\'identique');
+    f = await fetch(BASE + '/audio/' + up0.body.file, { headers: { Range: 'bytes=10-19' } });
+    assert.equal(f.status, 206); assert.equal(f.headers.get('content-range'), 'bytes 10-19/' + ogg.length);
+    assert.equal((await f.arrayBuffer()).byteLength, 10);
+    assert.equal((await fetch(BASE + '/audio/' + '0'.repeat(24) + '.mp3')).status, 404, 'fichier inconnu');
+    assert.equal((await fetch(BASE + '/audio/../server.js')).status, 404, 'pas de sortie du dossier');
     assert.equal((await people[0]('POST', '/api/entry', { name: 'a', anime: 'b', title: 'c', link: 'javascript:alert(1)' })).status, 400, 'lien dangereux refusé');
     assert.equal((await client()('GET', '/api/state')).body.stats.entrants, 5, 'compteur public d\'inscrits');
     assert.equal((await adm('POST', '/api/admin/draw')).status, 200);
@@ -88,6 +124,10 @@ function client() {
     assert.equal(st.cfg.voteMinutes, 0.05);
     assert.equal(st.matches.length, 3, '5 participants = 2 duels + 1 qualifié d\'office');
     assert.equal(st.matches.filter((m) => m.bye).length, 1);
+    const sides = st.matches.flatMap((m) => [m.a, m.b]).filter(Boolean);
+    assert.ok(sides.some((x) => x.audio === up0.body.file), 'l\'audio apparaît dans le duel');
+    assert.ok(sides.some((x) => x.audio === null && x.link), 'un opening avec lien seulement reste possible');
+    assert.equal((await people[0].raw('/api/audio', ogg)).status, 409, 'envoi refusé après le tirage');
 
     let tieDone = false, liveChecked = false, loops = 0;
     while (st.t.status !== 'termine') {

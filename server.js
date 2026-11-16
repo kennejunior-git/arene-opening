@@ -7,6 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { pipeline, Transform } = require('node:stream');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -17,6 +18,7 @@ const VOTE_MINUTES = Number(process.env.VOTE_MINUTES) || 15;
 const EXTEND_MINUTES = Number(process.env.EXTEND_MINUTES) || 5;
 // Après ce nombre de prolongations sans départage, le serveur tire au sort pour ne pas bloquer le tournoi.
 const MAX_EXTENSIONS = process.env.MAX_EXTENSIONS ? Number(process.env.MAX_EXTENSIONS) : 6;
+const MAX_AUDIO = Math.round((Number(process.env.MAX_AUDIO_MB) || 15) * 1024 * 1024);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 if (ADMIN_PASSWORD.length < 8) {
@@ -24,6 +26,8 @@ if (ADMIN_PASSWORD.length < 8) {
   process.exit(1);
 }
 fs.mkdirSync(DATA_DIR, { recursive: true });
+const AUDIO_DIR = path.join(DATA_DIR, 'audio');
+fs.mkdirSync(AUDIO_DIR, { recursive: true });
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.txt');
 
@@ -35,7 +39,7 @@ if (!SECRET) {
 }
 
 /* ---------- état ---------- */
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, log: [] });
 let S;
 try { S = Object.assign(emptyState(), JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))); } catch (e) { S = emptyState(); }
 
@@ -140,7 +144,7 @@ function createRound(r, ids) {
     const idx = i / 2 + 1, id = 'r' + r + 'm' + idx;
     let aU = order[i], bU = order[i + 1] || null;
     if (bU && crypto.randomInt(2) === 1) { const x = aU; aU = bU; bU = x; }
-    const side = (u, k) => { const e = S.entrants[u]; return { slot: id + k, title: e.title, anime: e.anime, link: e.link }; };
+    const side = (u, k) => { const e = S.entrants[u]; return { slot: id + k, title: e.title, anime: e.anime, link: e.link || null, audio: e.audio ? e.audio.file : null }; };
     const m = { id: id, round: r, idx: idx, status: bU ? 'attente' : 'clos', a: side(aU, 'a'), b: bU ? side(bU, 'b') : null };
     if (!bU) { m.bye = true; m.winnerSlot = id + 'a'; m.reveal = { a: S.entrants[aU].name }; }
     S.matches[id] = m;
@@ -226,7 +230,7 @@ function publicState(vid) {
   const voted = Object.keys(S.votes).filter((c) => Object.keys(S.votes[c]).length > 0).length;
   const out = {
     now: Date.now(),
-    cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS },
+    cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576 },
     t: S.t,
     matches: matchList().map(pubMatch),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
@@ -237,7 +241,7 @@ function publicState(vid) {
     const e = S.entrants[vid], c = codeOf(vid);
     out.me = {
       name: c && c.name || null,
-      entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link, matchId: e.matchId || null, slot: e.slot || null } : null,
+      entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link || null, audio: e.audio ? e.audio.file : null, matchId: e.matchId || null, slot: e.slot || null } : null,
       votes: S.votes[vid] || {}
     };
   }
@@ -249,6 +253,89 @@ function needTournament(status) {
   if (!S.t) fail(409, 'Aucun tournoi n\'a été créé.');
   if (status && S.t.status !== status) fail(409, 'Cette action n\'est pas possible à ce stade du tournoi.');
 }
+/* ---------- fichiers audio ---------- */
+const AUDIO_TYPES = { mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac', aac: 'audio/aac' };
+function sniffAudio(b) {
+  if (b.length < 12) return null;
+  if (b.toString('latin1', 0, 3) === 'ID3') return 'mp3';
+  if (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0) return ((b[1] >> 1) & 3) === 0 ? 'aac' : 'mp3';
+  if (b.toString('latin1', 0, 4) === 'OggS') return 'ogg';
+  if (b.toString('latin1', 0, 4) === 'fLaC') return 'flac';
+  if (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WAVE') return 'wav';
+  if (b.toString('latin1', 4, 8) === 'ftyp') return 'm4a';
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'webm';
+  return null;
+}
+function unlinkAudio(file) {
+  if (/^[a-f0-9]{24}\.[a-z0-9]{3,4}$/.test(String(file))) fs.unlink(path.join(AUDIO_DIR, file), () => {});
+}
+// Le fichier arrive tel quel dans le corps de la requête (pas de formulaire multipart).
+function handleUpload(req, res) {
+  const vid = voterId(req);
+  if (!vid) return sendJson(res, 401, { error: 'Entre ton code d\'invitation d\'abord.' });
+  if (!S.t || S.t.status !== 'inscription') return sendJson(res, 409, { error: 'Les inscriptions sont fermées.' });
+  const key = 'up:' + vid;
+  if (tooMany(key)) return sendJson(res, 429, { error: 'Trop d\'envois. Réessaie dans quelques minutes.' });
+  hit(key);
+  const len = Number(req.headers['content-length']);
+  if (!len) return sendJson(res, 411, { error: 'Taille du fichier inconnue.' });
+  if (len > MAX_AUDIO) {
+    if (len > MAX_AUDIO * 4) { res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8', Connection: 'close' }); res.end(JSON.stringify({ error: 'Fichier trop gros.' })); return req.destroy(); }
+    req.on('end', () => sendJson(res, 413, { error: 'Fichier trop gros : ' + Math.round(MAX_AUDIO / 1048576) + ' Mo maximum.' }));
+    return req.resume();
+  }
+  const tmp = path.join(AUDIO_DIR, 'tmp-' + crypto.randomBytes(8).toString('hex'));
+  let size = 0, head = Buffer.alloc(0);
+  const meter = new Transform({
+    transform(chunk, enc, cb) {
+      size += chunk.length;
+      if (size > MAX_AUDIO) return cb(new HttpError(413, 'Fichier trop gros : ' + Math.round(MAX_AUDIO / 1048576) + ' Mo maximum.'));
+      if (head.length < 16) head = Buffer.concat([head, chunk]).subarray(0, 16);
+      cb(null, chunk);
+    }
+  });
+  pipeline(req, meter, fs.createWriteStream(tmp), (err) => {
+    if (err) {
+      fs.unlink(tmp, () => {});
+      if (res.headersSent) return;
+      return err instanceof HttpError ? sendJson(res, err.status, { error: err.message }) : sendJson(res, 400, { error: 'Envoi interrompu.' });
+    }
+    const ext = sniffAudio(head);
+    if (!ext || size < 1024) {
+      fs.unlink(tmp, () => {});
+      return sendJson(res, 415, { error: 'Ce fichier n\'est pas un audio reconnu. Formats acceptés : mp3, m4a, ogg/opus, wav, aac, flac.' });
+    }
+    const file = crypto.randomBytes(12).toString('hex') + '.' + ext;
+    try {
+      fs.renameSync(tmp, path.join(AUDIO_DIR, file));
+      if (S.uploads[vid]) unlinkAudio(S.uploads[vid].file);
+      S.uploads[vid] = { file: file, size: size };
+      save();
+    } catch (e) { console.error(e); return sendJson(res, 500, { error: 'Impossible d\'enregistrer le fichier.' }); }
+    sendJson(res, 200, { ok: true, file: file });
+  });
+}
+function serveAudio(req, res, file) {
+  const fp = path.join(AUDIO_DIR, file);
+  fs.stat(fp, (err, st) => {
+    if (err || !st.isFile()) { res.writeHead(404, SEC); return res.end('Introuvable'); }
+    const head = Object.assign({ 'Content-Type': AUDIO_TYPES[path.extname(file).slice(1)], 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=86400, immutable' }, SEC);
+    let start = 0, end = st.size - 1, status = 200;
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+    if (m && (m[1] || m[2])) {
+      if (m[1] === '') start = Math.max(0, st.size - Number(m[2]));
+      else { start = Number(m[1]); if (m[2] !== '') end = Math.min(end, Number(m[2])); }
+      if (start > end || start >= st.size) { res.writeHead(416, Object.assign({ 'Content-Range': 'bytes */' + st.size }, SEC)); return res.end(); }
+      status = 206;
+      head['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+    }
+    head['Content-Length'] = end - start + 1;
+    res.writeHead(status, head);
+    if (req.method === 'HEAD') return res.end();
+    fs.createReadStream(fp, { start: start, end: end }).pipe(res);
+  });
+}
+
 const routes = {
   'POST /api/redeem': (req, res, body) => {
     const ip = 'code:' + clientIp(req);
@@ -286,10 +373,19 @@ const routes = {
     const vid = voterId(req);
     if (!vid) fail(401, 'Entre ton code d\'invitation d\'abord.');
     needTournament('inscription');
-    const name = clean(body.name, 40), anime = clean(body.anime, 60), title = clean(body.title, 80), link = safeUrl(clean(body.link, 300));
+    const name = clean(body.name, 40), anime = clean(body.anime, 60), title = clean(body.title, 80);
+    const rawLink = clean(body.link, 300), link = rawLink ? safeUrl(rawLink) : null;
     if (!name || !anime || !title) fail(400, 'Remplis le pseudo, l\'anime et le titre.');
-    if (!link) fail(400, 'Le lien doit commencer par https://');
-    S.entrants[vid] = { name: name, anime: anime, title: title, link: link };
+    if (rawLink && !link) fail(400, 'Le lien doit commencer par https://');
+    let audio = (S.entrants[vid] && S.entrants[vid].audio) || null;
+    const up = S.uploads[vid];
+    if (up) {
+      if (audio && audio.file !== up.file) unlinkAudio(audio.file);
+      audio = up;
+      delete S.uploads[vid];
+    }
+    if (!audio && !link) fail(400, 'Envoie un fichier audio ou colle un lien.');
+    S.entrants[vid] = { name: name, anime: anime, title: title, link: link, audio: audio };
     save();
     return { ok: true };
   },
@@ -438,6 +534,9 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     const key = req.method + ' ' + url.pathname;
+    if (key === 'POST /api/audio') return handleUpload(req, res);
+    const am = /^\/audio\/([a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac))$/.exec(url.pathname);
+    if (am && (req.method === 'GET' || req.method === 'HEAD')) return serveAudio(req, res, am[1]);
     if (url.pathname.startsWith('/api/')) {
       const fn = routes[key];
       if (!fn) return sendJson(res, 404, { error: 'Introuvable.' });
