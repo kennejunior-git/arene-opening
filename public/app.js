@@ -208,6 +208,15 @@
     return !!(S.me && S.me.name && m.status === 'ouvert' && now() < m.closesAt && !(S.me.entry && S.me.entry.matchId === m.id));
   }
 
+  var REACTIONS=[{id:'love',emoji:'❤️',label:'J’adore'},{id:'fire',emoji:'🔥',label:'Impressionnant'},{id:'laugh',emoji:'😂',label:'Drôle'},{id:'wow',emoji:'😮',label:'Incroyable'},{id:'clap',emoji:'👏',label:'Bravo'}];
+  var reacting=false;
+  function reactionHTML(m,side) {
+    var sideKey=side.slot===m.a.slot?'a':'b',data=m.reactions&&m.reactions[sideKey]||{counts:{},mine:null},encounter=m.encounters?m.currentEncounter:1;
+    var h='<div class="opening-reactions"><span class="reaction-title">Réactions</span><div class="reaction-list">';
+    REACTIONS.forEach(function(r){var count=Number(data.counts&&data.counts[r.id]||0),active=data.mine===r.id;h+='<button type="button" class="reaction-btn'+(active?' active':'')+'" data-reaction="'+r.id+'" data-m="'+esc(m.id)+'" data-s="'+esc(side.slot)+'" data-e="'+encounter+'" title="'+esc(r.label)+'" aria-pressed="'+(active?'true':'false')+'"'+((!S.me||!S.me.name||reacting)?' disabled':'')+'><span>'+r.emoji+'</span><b>'+count+'</b></button>';});
+    h+='</div>'+(!S.me||!S.me.name?'<small>Connecte-toi pour réagir</small>':'')+'</div>';return h;
+  }
+
   function optHTML(side, pos, m, mode) {
     var u = safeUrl(side.link), voteKey = m.encounters ? m.id + ':e' + m.currentEncounter : m.id;
     var picked = S.me && S.me.votes[voteKey] === side.slot;
@@ -221,7 +230,7 @@
       (video && video.file ? '<video controls preload="metadata" playsinline style="width:100%;max-height:320px" src="/video/' + esc(video.file) + '"></video>' : '') +
       (side.audio ? '<audio controls preload="none" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
-      (mine ? '<span class="tag">Ton opening</span>' : '') + '</p></div>';
+      (mine ? '<span class="tag">Ton opening</span>' : '') + '</p>' + reactionHTML(m, side) + '</div>';
     if (mode === 'vote') {
       if (m.liveTally) {
         var lt = m.liveTally, lt_total = lt.a + lt.b, ln = isA ? lt.a : lt.b, lp = lt_total ? Math.round(100 * ln / lt_total) : 0;
@@ -368,10 +377,18 @@
     voting = false; renderDuels(); load();
   }
 
+  async function sendReaction(button) {
+    if(reacting)return;reacting=true;renderDuels();
+    try{await api('/api/reaction',{matchId:button.getAttribute('data-m'),slot:button.getAttribute('data-s'),encounter:Number(button.getAttribute('data-e')),type:button.getAttribute('data-reaction')});await load();}
+    catch(e){voteMsg=e.message||'Réaction impossible.';}
+    finally{reacting=false;renderDuels();}
+  }
+
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
-    if (b.hasAttribute('data-prize-confirm')) {
+    if (b.classList.contains('reaction-btn')) sendReaction(b);
+    else if (b.hasAttribute('data-prize-confirm')) {
       api('/api/prize/confirm', { received: b.getAttribute('data-prize-confirm') === 'yes' }).then(load).catch(function (er) { loginErr = er.message; lastLoginKey = ''; load(); });
     } else if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
     else if (b.id === 'logoutBtn') api('/api/logout', {}).then(function () { lastLoginKey = ''; lastRegKey = ''; return load(); });
