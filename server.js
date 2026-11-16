@@ -32,7 +32,7 @@ const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
 const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
 if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
 let SECRET = process.env.SESSION_SECRET || '';
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, videoUploads: {}, bonuses: [], community: { comments: [], favorites: {} }, log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, reactions: {}, uploads: {}, videoUploads: {}, bonuses: [], community: { comments: [], favorites: {} }, log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 function save() {
  const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
@@ -199,8 +199,11 @@ function closeExpired() {
   if(changed)save();
 }
 /* ---------- vues JSON ---------- */
-function pubMatch(m) {
+function pubMatch(m, vid) {
   const o={id:m.id,round:m.round,idx:m.idx,status:m.status,bye:!!m.bye,a:m.a,b:m.b,closesAt:m.closesAt||null,extensions:m.extensions||0,live:!!m.live,eligible:Math.max(0,S.codes.length-(m.bye?0:2)),currentEncounter:m.currentEncounter||1,encounters:m.encounters||null};
+  const reactionKey=m.id+':e'+(m.encounters?m.currentEncounter:1), stored=S.reactions&&S.reactions[reactionKey]||{};
+  const reactionSummary=(slot)=>{const entries=Object.entries(stored).filter(x=>x[1]&&x[1].slot===slot);const counts={love:0,fire:0,laugh:0,wow:0,clap:0};entries.forEach(x=>{if(counts[x[1].type]!==undefined)counts[x[1].type]++;});return {counts,mine:vid&&stored[vid]&&stored[vid].slot===slot?stored[vid].type:null,total:entries.length};};
+  o.reactions={a:reactionSummary(m.a.slot),b:m.b?reactionSummary(m.b.slot):null};
   if(m.status==='ouvert'){const r=countBallots(m,m.encounters?m.currentEncounter:undefined);o.votes=r.a+r.b;if(m.live)o.liveTally={a:r.a,b:r.b};}
   if(m.status==='clos'){o.tally=m.tally||null;o.winnerSlot=m.winnerSlot;o.reveal=m.reveal;o.voters=m.voters||null;o.byLot=!!m.byLot;}
   return o;
@@ -211,7 +214,7 @@ function publicState(vid) {
     now: Date.now(),
     cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576, maxVideoMb: MAX_VIDEO / 1048576, maxVideoSeconds: MAX_VIDEO_SECONDS },
     t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, hasThirdPlacePlayoff: !!(S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2), thirdPlacePlayers: undefined }) : null,
-    matches: matchList().map(pubMatch),
+    matches: matchList().map((m) => pubMatch(m, vid)),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
     log: S.log.slice(-100).reverse(),
     me: null
@@ -522,6 +525,27 @@ const routes = {
     S.entrants[vid] = { name, anime, title, link, audio };
     save();
     return { ok: true };
+  },
+  'POST /api/reaction': (req, res, body) => {
+    const vid=voterId(req);
+    if(!vid||!codeOf(vid).name) fail(401,'Connecte-toi avec ton code joueur pour réagir.');
+    const m=S.matches[String(body.matchId)];
+    if(!m||m.bye||!m.b) fail(404,'Duel introuvable.');
+    const slot=String(body.slot||'');
+    if(slot!==m.a.slot&&slot!==m.b.slot) fail(400,'Opening invalide.');
+    const encounter=m.encounters?Number(body.encounter):1;
+    if(!Number.isInteger(encounter)||encounter<1||encounter>(m.encounters?3:1)) fail(400,'Affrontement invalide.');
+    const type=String(body.type||''),allowed=['love','fire','laugh','wow','clap'];
+    if(!allowed.includes(type)) fail(400,'Réaction invalide.');
+    if(!S.reactions) S.reactions={};
+    const key=m.id+':e'+encounter;
+    if(!S.reactions[key]) S.reactions[key]={};
+    const current=S.reactions[key][vid];
+    if(current&&current.slot===slot&&current.type===type) delete S.reactions[key][vid];
+    else S.reactions[key][vid]={slot,type};
+    save();
+    const entries=Object.values(S.reactions[key]).filter(x=>x&&x.slot===slot);
+    return {ok:true,mine:S.reactions[key][vid]&&S.reactions[key][vid].slot===slot?S.reactions[key][vid].type:null,total:entries.length};
   },
   'POST /api/vote': (req, res, body) => {
     const vid = voterId(req);
