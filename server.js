@@ -800,6 +800,27 @@ const routes = {
     save();
     return { ok: true };
   },
+  'POST /api/admin/delete-unstarted': async (req, res, body) => {
+    if (body.confirm !== 'SUPPRIMER TOURNOI') fail(400, 'Tape SUPPRIMER TOURNOI pour confirmer.');
+    if (!S.t || S.t.status !== 'inscription' || Object.keys(S.matches || {}).length > 0) fail(409, 'Seul un tournoi dont les inscriptions sont ouvertes et dont aucun affrontement n’a commencé peut être supprimé.');
+    const files = new Set();
+    for (const entry of Object.values(S.entrants || {})) {
+      for (const v of (entry && Array.isArray(entry.videos) ? entry.videos : [])) if (v && v.file) files.add(v.file);
+      if (entry && entry.file) files.add(entry.file);
+    }
+    for (const uploads of Object.values(S.videoUploads || {})) for (const up of Object.values(uploads || {})) if (up && up.file) files.add(up.file);
+    for (const up of Object.values(S.uploads || {})) if (up && up.file) files.add(up.file);
+    for (const file of files) {
+      try { await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: file })); }
+      catch (e) { console.error('Suppression média du tournoi impossible:', file, e.message); }
+    }
+    const name = S.t.name;
+    S.t = null; S.entrants = {}; S.matches = {}; S.pairings = {}; S.votes = {}; S.reactions = {};
+    S.uploads = {}; S.videoUploads = {};
+    logIt('Tournoi supprimé avant son lancement : ' + name + '. Les archives et codes des membres sont conservés.');
+    await save();
+    return { ok: true, deletedFiles: files.size };
+  },
   'POST /api/admin/reset': (req, res, body) => {
     if (body.confirm !== 'NOUVEAU') fail(400, 'Tape NOUVEAU pour confirmer.');
     pendingArchive = JSON.stringify(S);
