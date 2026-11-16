@@ -39,7 +39,7 @@
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
