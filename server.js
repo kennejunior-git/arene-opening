@@ -231,7 +231,9 @@ function publicState(vid) {
     out.me = {
       name: c && c.name || null,
       entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link || null, audio: e.audio ? e.audio.file : null, matchId: e.matchId || null, slot: e.slot || null } : null,
-      votes: S.votes[vid] || {}
+      votes: S.votes[vid] || {},
+      mobileMoney: c && c.mobileMoney ? c.mobileMoney : null,
+      prize: S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === vid) || null : null
     };
   }
   return out;
@@ -330,6 +332,31 @@ const routes = {
     setCookie(req, res, 'v', mk(c.id), 90 * 24 * 3600);
     return { ok: true };
   },
+  'POST /api/mobile-money': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid) fail(401, 'Connecte-toi avec ton code d\'invitation.');
+    const provider = String(body.provider || '');
+    if (!['MTN', 'ORANGE'].includes(provider)) fail(400, 'Choisis MTN Mobile Money ou Orange Money.');
+    const number = String(body.number || '').replace(/[ .()-]/g, '');
+    if (!/^\\+?[0-9]{8,15}$/.test(number)) fail(400, 'Entre un numéro valide (8 à 15 chiffres, indicatif accepté).');
+    const c = codeOf(vid);
+    c.mobileMoney = { provider, number, updatedAt: Date.now() };
+    save();
+    return { ok: true };
+  },
+  'POST /api/prize/confirm': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid) fail(401, 'Connecte-toi avec ton code d\'invitation.');
+    const payout = S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === vid) : null;
+    if (!payout || payout.status !== 'envoye') fail(409, 'Aucun paiement à confirmer.');
+    if (body.received !== true && body.received !== false) fail(400, 'Réponse invalide.');
+    payout.status = body.received ? 'recu' : 'non_recu';
+    payout.playerConfirmedAt = Date.now();
+    payout.playerNote = clean(body.note, 200);
+    logIt((body.received ? 'Réception confirmée' : 'Paiement signalé non reçu') + ' par ' + payout.playerName + ' pour la récompense de ' + payout.amount + ' FCFA.');
+    save();
+    return { ok: true };
+  },
   'POST /api/name': (req, res, body) => {
     const vid = voterId(req);
     if (!vid) fail(401, 'Entre ton code d\'invitation d\'abord.');
@@ -425,7 +452,9 @@ const routes = {
     st.admin = true;
     st.codes = S.codes.map((c) => ({ code: fmtCode(c.code), used: !!c.usedAt }));
     st.entrantCount = Object.keys(S.entrants).length;
-    st.players = S.codes.filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
+    st.players = S.codes.filter((c) => c.name).map((c) => ({ id: c.id, name: c.name, mobileMoney: c.mobileMoney || null }));
+    st.prizeConfig = S.t && S.t.prizeConfig || { enabled: false, amounts: { first: 0, second: 0, third: 0 } };
+    st.prizePayouts = S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts : [];
     st.bonuses = Array.isArray(S.bonuses) ? S.bonuses : [];
     return st;
   },
@@ -433,8 +462,38 @@ const routes = {
     if (S.t) fail(409, 'Un tournoi existe déjà. Utilise « Nouveau tournoi ».');
     const name = clean(body.name, 60);
     if (!name) fail(400, 'Donne un nom au tournoi.');
-    S.t = { name: name, status: 'inscription', round: 0, createdAt: Date.now() };
+    S.t = { name: name, status: 'inscription', round: 0, createdAt: Date.now(), prizeConfig: { enabled: false, amounts: { first: 0, second: 0, third: 0 } } };
     logIt('Tournoi créé : ' + name + '. Inscriptions ouvertes.');
+    save();
+    return { ok: true };
+  },
+  'POST /api/admin/prize-config': (req, res, body) => {
+    needTournament('inscription');
+    const enabled = body.enabled === true;
+    const amounts = { first: Number(body.first), second: Number(body.second), third: Number(body.third) };
+    for (const [place, amount] of Object.entries(amounts)) {
+      if (!Number.isSafeInteger(amount) || amount < 0 || amount > 100000000) fail(400, 'Chaque récompense doit être un montant entier positif en FCFA.');
+    }
+    if (enabled && amounts.first <= 0) fail(400, 'Indique une récompense pour la 1re place.');
+    if (enabled && amounts.second > 0 && amounts.first <= amounts.second) fail(400, 'La récompense de la 1re place doit être supérieure à celle de la 2e.');
+    if (!enabled) amounts.first = amounts.second = amounts.third = 0;
+    S.t.prizeConfig = { enabled, amounts };
+    logIt(enabled ? 'Récompenses annoncées : 1re place ' + amounts.first + ', 2e place ' + amounts.second + ', 3e place ' + amounts.third + ' FCFA.' : 'Aucune récompense financière pour ce tournoi.');
+    save();
+    return { ok: true };
+  },
+  'POST /api/admin/prize-payment': (req, res, body) => {
+    const playerId = String(body.playerId || '');
+    const payout = S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === playerId) : null;
+    if (!payout) fail(404, 'Récompense introuvable.');
+    const method = String(body.method || '');
+    if (!['MTN', 'ORANGE'].includes(method)) fail(400, 'Choisis le moyen de paiement.');
+    if (!['a_payer', 'non_recu'].includes(payout.status)) fail(409, 'Ce paiement ne peut pas être marqué comme envoyé.');
+    payout.method = method;
+    payout.status = 'envoye';
+    payout.sentAt = Date.now();
+    payout.reference = clean(body.reference, 80);
+    logIt('Récompense envoyée à ' + payout.playerName + ' (' + payout.amount + ' FCFA) via ' + (method === 'MTN' ? 'MTN Mobile Money' : 'Orange Money') + '. En attente de confirmation.');
     save();
     return { ok: true };
   },
@@ -498,9 +557,33 @@ const routes = {
       logIt('Tournoi terminé. Vainqueur : ' + c.name + ' avec « ' + c.title + ' ».');
     } else {
       const next = S.t.round + 1;
-      createRound(next, winners);
-      S.t.round = next;
-      logIt('Tour ' + next + ' lancé : ' + winners.length + ' qualifiés, duels tirés au sort par le serveur.');
+      if (S.t.round === S.t.roundsTotal - 1 && cur.length === 2 && !S.t.thirdPlacePlayers) {
+        const loserIds = cur.map((m) => m.winnerSlot === m.a.slot ? S.pairings[m.id].bUid : S.pairings[m.id].aUid).filter(Boolean);
+        if (loserIds.length === 2) S.t.thirdPlacePlayers = loserIds;
+      }
+      if (S.t.thirdPlaceRound && S.t.round === S.t.thirdPlaceRound) {
+        const finalMatch = matchList().find((m) => m.round === S.t.roundsTotal && m.status === 'clos' && !m.bye && m.winnerSlot);
+        const finalPair = finalMatch && S.pairings[finalMatch.id];
+        if (!finalMatch || !finalPair) fail(409, 'La finale doit être terminée avant de clôturer le tournoi.');
+        const championId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.aUid : finalPair.bUid;
+        const runnerId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.bUid : finalPair.aUid;
+        S.t.status = 'termine';
+        S.t.champion = { name: S.entrants[championId].name, title: S.entrants[championId].title, anime: S.entrants[championId].anime, link: S.entrants[championId].link };
+        S.t.runnerUpId = runnerId;
+        const thirdMatch = matchList().find((m) => m.round === S.t.thirdPlaceRound && m.status === 'clos' && !m.bye && m.winnerSlot);
+        if (thirdMatch) { const tp = S.pairings[thirdMatch.id]; S.t.thirdPlaceId = thirdMatch.winnerSlot === thirdMatch.a.slot ? tp.aUid : tp.bUid; }
+        createPrizePayouts();
+        logIt('Tournoi terminé. Vainqueur : ' + S.t.champion.name + '.');
+      } else if (S.t.thirdPlacePlayers && S.t.round === S.t.roundsTotal) {
+        createRound(next, S.t.thirdPlacePlayers);
+        S.t.thirdPlaceRound = next;
+        S.t.round = next;
+        logIt('Finale terminée. Duel pour la 3e place lancé.');
+      } else {
+        createRound(next, winners);
+        S.t.round = next;
+        logIt('Tour ' + next + ' lancé : ' + winners.length + ' qualifiés, duels tirés au sort par le serveur.');
+      }
     }
     save();
     return { ok: true };
@@ -565,6 +648,20 @@ function playerBadges(p) {
   if (p.wins >= 10) badges.push({ id: 'master', icon: '🔥', name: 'Maître des duels', detail: '10 duels remportés' });
   if (p.tournaments >= 3) badges.push({ id: 'veteran', icon: '🎖️', name: 'Vétéran', detail: '3 tournois disputés' });
   return badges;
+}
+function createPrizePayouts() {
+  const cfg = S.t && S.t.prizeConfig;
+  S.t.prizePayouts = [];
+  if (!cfg || !cfg.enabled) return;
+  const recipients = [
+    { place: 1, playerId: S.t.champion && S.codes.find((c) => c.name === S.t.champion.name && S.entrants[c.id])?.id, amount: Number(cfg.amounts && cfg.amounts.first || 0) },
+    { place: 2, playerId: S.t.runnerUpId, amount: Number(cfg.amounts && cfg.amounts.second || 0) },
+    { place: 3, playerId: S.t.thirdPlaceId, amount: Number(cfg.amounts && cfg.amounts.third || 0) }
+  ];
+  recipients.forEach((r) => {
+    const c = S.codes.find((x) => x.id === r.playerId);
+    if (c && r.amount > 0) S.t.prizePayouts.push({ playerId: c.id, playerName: c.name, place: r.place, amount: r.amount, status: 'a_payer' });
+  });
 }
 function audioKeys(state) {
   const keys = new Set();
