@@ -338,7 +338,7 @@ const routes = {
     const provider = String(body.provider || '');
     if (!['MTN', 'ORANGE'].includes(provider)) fail(400, 'Choisis MTN Mobile Money ou Orange Money.');
     const number = String(body.number || '').replace(/[ .()-]/g, '');
-    if (!/^\\+?[0-9]{8,15}$/.test(number)) fail(400, 'Entre un numéro valide (8 à 15 chiffres, indicatif accepté).');
+    if (!/^\+?[0-9]{8,15}$/.test(number)) fail(400, 'Entre un numéro valide (8 à 15 chiffres, indicatif accepté).');
     const c = codeOf(vid);
     c.mobileMoney = { provider, number, updatedAt: Date.now() };
     save();
