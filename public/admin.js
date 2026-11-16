@@ -254,6 +254,7 @@
     } else if (f === 'createForm') run(function () { return api('/api/admin/create', { name: draft.tname }); }, 'Tournoi créé.');
     else if (f === 'codesForm') run(function () { return api('/api/admin/codes', { count: Number(draft.count) }); }, 'Codes générés.');
     else if (f === 'resetForm') run(function () { return api('/api/admin/reset', { confirm: draft.confirm }).then(function () { draft.confirm = ''; }); }, 'Nouveau tournoi prêt.');
+    else if (f === 'prizeConfigForm') { var pf = new FormData(e.target); run(function () { return api('/api/admin/prize-config', { enabled: pf.get('enabled') === 'on', first: Number(pf.get('first')), second: Number(pf.get('second')), third: Number(pf.get('third')) }); }, 'Récompenses enregistrées et annoncées.'); }
     else if (f === 'bonusForm') { var bf = new FormData(e.target); run(function () { return api('/api/admin/bonus', { playerId: bf.get('playerId'), points: Number(bf.get('points')), reason: bf.get('reason') }); }, 'Bonus enregistré et ajouté au journal.'); }
     else if (f === 'storageForm') { var sf = new FormData(e.target); run(function () { return api('/api/admin/storage/cleanup', { archiveId: Number(sf.get('archiveId')), confirm: sf.get('confirm') }); }, 'Nettoyage terminé. Les résultats historiques sont conservés.'); }
   });
