@@ -528,7 +528,7 @@ function scoreTournament(state, totals, entries, archived) {
   const key = tournamentKey(state);
   for (const [uid, entry] of Object.entries(state.entrants || {})) {
     if (!entries[uid]) entries[uid] = [];
-    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived ? 'archive' : (state.t.status || '') });
+    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived && state.t.status === 'termine' ? 'archive' : (state.t.status || '') });
     if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
     totals[uid].tournaments.add(key);
   }
