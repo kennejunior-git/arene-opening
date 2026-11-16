@@ -220,6 +220,12 @@
     });
     h += '</section>';
 
+    /* suppression du tournoi non commencé */
+    if (A.t && A.t.status === 'inscription' && Object.keys(A.matches || {}).length === 0) {
+      h += '<section class="panel"><h2>Supprimer ce tournoi</h2><p class="lead">Réservé à un tournoi dont les inscriptions sont ouvertes et dont aucun affrontement n’a commencé. Le tournoi et ses vidéos seront supprimés. Les codes des membres et les anciennes archives seront conservés.</p>' +
+        '<form id="deleteUnstartedForm" class="stack"><label for="deleteTournamentConfirm">Tape SUPPRIMER TOURNOI pour confirmer</label><input id="deleteTournamentConfirm" name="confirm" autocomplete="off" required>' +
+        '<button class="btn small" type="submit"' + dis + '>Supprimer définitivement ce tournoi</button></form></section>';
+    }
     /* nouveau tournoi */
     if (A.t) {
       h += '<section class="panel"><h2>Nouveau tournoi</h2><p class="lead">Archive le tournoi actuel (inscriptions, duels, votes) et repart de zéro. Les codes d\'invitation sont conservés : les membres gardent le leur.</p>' +
@@ -280,6 +286,12 @@
       catch (er) { err = er.message; render(true); }
     } else if (f === 'createForm') run(function () { return api('/api/admin/create', { name: draft.tname }); }, 'Tournoi créé.');
     else if (f === 'codesForm') run(function () { return api('/api/admin/codes', { count: Number(draft.count) }); }, 'Codes générés.');
+    else if (f === 'deleteUnstartedForm') {
+      var df = new FormData(e.target);
+      if (df.get('confirm') !== 'SUPPRIMER TOURNOI') { err = 'Confirmation incorrecte.'; render(); return; }
+      if (!window.confirm('Supprimer définitivement ce tournoi et ses médias ? Les codes et archives seront conservés.')) return;
+      run(function () { return api('/api/admin/delete-unstarted', { confirm: df.get('confirm') }); }, 'Tournoi supprimé. Les codes et archives sont conservés.');
+    }
     else if (f === 'resetForm') run(function () { return api('/api/admin/reset', { confirm: draft.confirm }).then(function () { draft.confirm = ''; }); }, 'Nouveau tournoi prêt.');
     else if (f === 'prizeConfigForm') { var pf = new FormData(e.target); run(function () { return api('/api/admin/prize-config', { enabled: pf.get('enabled') === 'on', first: Number(pf.get('first')), second: Number(pf.get('second')), third: Number(pf.get('third')) }); }, 'Récompenses enregistrées et annoncées.'); }
     else if (f === 'bonusForm') { var bf = new FormData(e.target); run(function () { return api('/api/admin/bonus', { playerId: bf.get('playerId'), points: Number(bf.get('points')), reason: bf.get('reason') }); }, 'Bonus enregistré et ajouté au journal.'); }
