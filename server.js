@@ -443,6 +443,20 @@ const routes = {
     save();
     return { ok: true, favorited: list.includes(vid), count: list.length };
   },
+  'POST /api/community/comment/like': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid || !codeOf(vid).name) fail(401, 'Connecte-toi avec ton code joueur pour aimer un commentaire.');
+    if (!S.community || !Array.isArray(S.community.comments)) fail(404, 'Commentaire introuvable.');
+    const id = String(body.commentId || '');
+    const comment = S.community.comments.find((c) => c.id === id);
+    if (!comment) fail(404, 'Commentaire introuvable.');
+    if (!Array.isArray(comment.likes)) comment.likes = [];
+    const index = comment.likes.indexOf(vid);
+    if (index >= 0) comment.likes.splice(index, 1);
+    else comment.likes.push(vid);
+    save();
+    return { ok: true, liked: comment.likes.includes(vid), count: comment.likes.length };
+  },
   'POST /api/community/comment': (req, res, body) => {
     const vid = voterId(req);
     if (!vid || !codeOf(vid).name) fail(401, 'Connecte-toi avec ton code joueur pour commenter.');
@@ -861,7 +875,7 @@ async function communityData(playerId, viewerId) {
     const p = players.find((x) => x.id === playerId);
     if (!p) return Object.assign(out, { profile: null });
     const history = (entries[playerId] || []).filter((e) => e.status === 'termine' || e.status === 'archive');
-    const comments = S.community.comments.filter((c) => c.playerId === playerId).slice(-100).reverse().map((c) => Object.assign({}, c, { canDelete: !!viewerId && c.authorId === viewerId }));
+    const comments = S.community.comments.filter((c) => c.playerId === playerId).slice(-100).reverse().map((c) => Object.assign({}, c, { likes: Array.isArray(c.likes) ? c.likes.length : 0, likedByMe: !!viewerId && Array.isArray(c.likes) && c.likes.includes(viewerId), canLike: !!viewerId, canDelete: !!viewerId && c.authorId === viewerId }));
     out.profile = Object.assign({}, p, { favorited: !!viewerId && (S.community.favorites[playerId] || []).includes(viewerId), canFavorite: !!viewerId && viewerId !== playerId, comments, titleCount: history.reduce((n, e) => n + (Array.isArray(e.videos) ? e.videos.length : 1), 0), podiums: { first: history.filter((e) => e.place === 1).length, second: history.filter((e) => e.place === 2).length, third: history.filter((e) => e.place === 3).length }, badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
   }
   return out;
