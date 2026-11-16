@@ -115,7 +115,7 @@
     } else if (A.t.status === 'inscription') {
       var n = A.entrantCount;
       h += '<div class="block"><p><strong>' + n + ' inscrit' + (n > 1 ? 's' : '') + '</strong> pour l\'instant.</p>' +
-        '<p class="note">Le tirage au sort forme les binômes au hasard et mélange l\'ordre des deux openings. Il ferme les inscriptions. Avec un nombre impair d\'inscrits, un participant tiré au sort passe d\'office au tour suivant. Tu ne vois pas qui est inscrit : les duels restent anonymes pour toi aussi.</p>' +
+        '<p class="note">Le tirage au sort forme les binômes au hasard. Chaque participant choisit l’ordre de ses 3 vidéos : l’affrontement 1 oppose les vidéos classées 1, puis les affrontements 2 et 3 suivent le même principe. Le tirage ferme les inscriptions. Avec un nombre impair d\'inscrits, un participant tiré au sort passe d\'office au tour suivant. Tu ne vois pas qui est inscrit : les duels restent anonymes pour toi aussi.</p>' +
         '<button class="btn ' + (armed === 'draw' ? 'armed' : 'primary') + '" data-act="draw"' + (n < 2 || busy ? ' disabled' : '') + '>' +
         (armed === 'draw' ? 'Confirmer : fermer et tirer au sort' : 'Fermer les inscriptions et tirer au sort') + '</button>' +
         (n < 2 ? '<p class="hint">Il faut au moins 2 inscrits.</p>' : '') + '</div>';
