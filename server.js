@@ -383,7 +383,7 @@ async function serveAudio(req,res,file){
  }catch(e){if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');}console.error('Lecture audio:',e);if(!res.headersSent){res.writeHead(502,SEC);res.end('Audio indisponible');}}
 }
 
-function adminVideoList() {
+async function adminVideoList() {
   const items = new Map();
   const add = (vid, v, source) => {
     if (!v || !/^[a-f0-9]{24}\.mp4$/.test(String(v.file || ''))) return;
@@ -401,7 +401,15 @@ function adminVideoList() {
     const pair=S.pairings[m.id], vid=pair && (side.slot===m.a.slot?pair.aUid:pair.bUid);
     (side.videos || []).forEach((v,i)=>add(vid,v,'Affrontement '+m.id+' · vidéo '+(i+1)));
   });
-  return Array.from(items.values()).sort((x,y)=>x.playerName.localeCompare(y.playerName,'fr'));
+  const list = Array.from(items.values());
+  await Promise.all(list.map(async (item) => {
+    if (item.size > 0) return;
+    try {
+      const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: item.file }));
+      item.size = Number(head.ContentLength || 0);
+    } catch (e) { /* fichier éventuellement absent : garder une taille inconnue */ }
+  }));
+  return list.sort((x,y)=>x.playerName.localeCompare(y.playerName,'fr'));
 }
 const routes = {
   'POST /api/redeem': (req, res, body) => {
@@ -534,7 +542,7 @@ const routes = {
         if (!title || !anime) fail(400, 'Complète le titre et l’anime des 3 vidéos.');
         if (!up || !up.file) fail(400, 'Envoie les 3 vidéos avant de valider.');
         if (![1,2,3].includes(order)) fail(400, 'Choisis l’ordre de passage des 3 vidéos (1, 2 et 3).');
-        return { title, anime, file: up.file, duration: Number(up.duration || 0), order };
+        return { title, anime, file: up.file, size: Number(up.size || 0), duration: Number(up.duration || 0), order };
       });
       if (new Set(videos.map(v => v.order)).size !== 3) fail(400, 'Chaque vidéo doit avoir un ordre de passage différent (1, 2 et 3).');
       const firstVideo = videos.find(v => v.order === 1) || videos[0];
@@ -635,11 +643,14 @@ const routes = {
     save();
     return { ok: true, deleted, pending: failed.length };
   },
-  'GET /api/admin/state': () => {
+  'GET /api/admin/state': async () => {
     const st = publicState(null);
     st.admin = true;
     st.codes = S.codes.map((c) => ({ code: fmtCode(c.code), used: !!c.usedAt }));
     st.entrantCount = Object.keys(S.entrants).length;
+    st.moderationVideos = await adminVideoList();
+    st.stats.videoCount = st.moderationVideos.length;
+    st.stats.videoBytes = st.moderationVideos.reduce((total, video) => total + Number(video.size || 0), 0);
     st.players = S.codes.filter((c) => c.name).map((c) => ({ id: c.id, name: c.name, mobileMoney: c.mobileMoney || null }));
     st.prizeConfig = S.t && S.t.prizeConfig || { enabled: false, amounts: { first: 0, second: 0, third: 0 } };
     st.prizePayouts = S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts : [];
@@ -651,7 +662,7 @@ const routes = {
     if (!/^[a-f0-9]{24}\.mp4$/.test(file)) fail(400,'Vidéo invalide.');
     if (body.confirm !== 'SUPPRIMER VIDEO') fail(400,'Confirmation incorrecte.');
     if (reason.length<3) fail(400,'Indique le motif de suppression.');
-    if (!adminVideoList().some(v=>v.file===file)) fail(404,'Cette vidéo n’est plus disponible.');
+    if (!(await adminVideoList()).some(v=>v.file===file)) fail(404,'Cette vidéo n’est plus disponible.');
     await s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file}));
     const keys=new Set([file]);
     clearAudioRefs(S,keys);
