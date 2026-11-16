@@ -132,12 +132,12 @@
         if (m.bye) info = '<span class="chip ok">Qualifié d\'office</span>';
         else if (m.status === 'attente') {
           info = '<span class="chip">En attente</span>';
-          btn = '<button class="btn small primary" data-act="open" data-m="' + esc(m.id) + '"' + dis + '>Ouvrir (' + fmtMin(vm) + ')</button>';
+          btn = '<button class="btn small primary" data-act="open" data-m="' + esc(m.id) + '"' + dis + '>' + (m.encounters ? 'Ouvrir affrontement ' + m.currentEncounter + '/3' : 'Ouvrir') + ' (' + fmtMin(vm) + ')</button>';
         } else if (m.status === 'ouvert') {
           info = '<span class="chip ok">Vote ouvert</span> <span class="note">' + m.votes + ' vote' + (m.votes > 1 ? 's' : '') + ' · fin dans <span data-closes="' + m.closesAt + '">' + fmtLeft(m.closesAt - nowMs()) + '</span>' +
             (m.extensions ? ' · prolongation ' + m.extensions : '') + (m.live ? ' · score en direct' : '') + '</span>';
         } else {
-          info = '<span class="chip">Terminé</span> <span class="note">' + (m.tally ? m.tally.a + ' – ' + m.tally.b : '') + (m.byLot ? ' · tirage au sort' : '') + '</span>';
+          info = '<span class="chip">Terminé</span> <span class="note">' + (m.tally ? m.tally.a + ' – ' + m.tally.b + (m.encounters ? ' votes · ' + m.tally.winsA + '–' + m.tally.winsB + ' affrontements gagnés' : '') : '') + (m.byLot ? ' · tirage au sort' : '') + '</span>';
         }
         return '<li><div class="info"><strong>' + matchTitle + '</strong><span>' + info + '</span></div>' + btn + '</li>';
       }).join('') + '</ul>';
