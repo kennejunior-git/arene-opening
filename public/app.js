@@ -45,6 +45,18 @@
     return 'Tour ' + r;
   }
 
+  function uploadVideo(file, slot, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open('POST', '/api/video/' + slot);
+      x.setRequestHeader('Content-Type', 'application/octet-stream');
+      x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(Math.round(100 * e.loaded / e.total)); };
+      x.onload = function () { var j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} if (x.status >= 200 && x.status < 300) resolve(j); else reject(new Error(j.error || 'Envoi vidéo impossible.')); };
+      x.onerror = function () { reject(new Error('Envoi interrompu. Vérifie ta connexion et réessaie.')); };
+      x.send(file);
+    });
+  }
+
   function uploadAudio(file, onProgress) {
     return new Promise(function (resolve, reject) {
       var x = new XMLHttpRequest();
@@ -140,33 +152,45 @@
   function renderReg() {
     var el = $('reg');
     if (!S || !S.t || !S.me) { el.hidden = true; lastRegKey = ''; return; }
-    var key = JSON.stringify([S.t.status, S.me.entry, regMsg, regErr, S.matches.length]);
+    var key = JSON.stringify([S.t.status, S.t.mediaMode, S.me.entry, S.me.videoUploads, regMsg, regErr, S.matches.length]);
     if (key === lastRegKey) return;
     lastRegKey = key;
     var h = '', e = S.me.entry;
-    if (S.t.status === 'inscription') {
+    if (S.t.status === 'inscription' && S.t.mediaMode === 'video3') {
+      var existing = e && e.videos || [];
+      var pending = S.me.videoUploads || {};
+      h = '<h2>' + (e ? 'Tes 3 vidéos' : 'Inscris tes 3 openings') + '</h2>' +
+        '<p class="lead">Envoie trois vidéos distinctes. Chaque vidéo dure 2 minutes maximum. Tu pourras choisir leur ordre de passage plus tard.</p>' +
+        '<form id="regForm" class="stack"><label for="f-name">Ton pseudo</label><input id="f-name" name="name" maxlength="40" required value="' + esc(e && e.name || S.me.name || '') + '">';
+      for (var i = 1; i <= 3; i++) {
+        var v = existing[i - 1] || {}, up = pending[i] || v;
+        h += '<div class="panel"><h3>Vidéo ' + i + '</h3>' +
+          '<label for="f-anime-' + i + '">Anime</label><input id="f-anime-' + i + '" name="anime' + i + '" maxlength="60" required value="' + esc(v.anime || '') + '">' +
+          '<label for="f-title-' + i + '">Titre de l’opening</label><input id="f-title-' + i + '" name="title' + i + '" maxlength="80" required value="' + esc(v.title || '') + '">' +
+          (up && up.file ? '<p class="okmsg">Vidéo ' + i + ' envoyée · ' + Math.round(Number(up.duration || 0)) + ' s</p><video controls preload="metadata" playsinline style="width:100%;max-height:260px" src="/video/' + esc(up.file) + '"></video>' : '') +
+          '<label for="f-video-' + i + '">Fichier vidéo MP4 ou MOV</label><input id="f-video-' + i + '" name="video' + i + '" type="file" accept="video/mp4,video/quicktime,.mp4,.mov" ' + (up && up.file ? '' : 'required') + '>' +
+          '<p class="hint">2 minutes maximum · 60 Mo maximum.</p></div>';
+      }
+      h += '<button class="btn primary" type="submit">' + (e ? 'Mettre à jour mes vidéos' : 'Enregistrer mes 3 vidéos') + '</button><p class="note" id="upmsg" role="status"></p>' +
+        (regMsg ? '<p class="okmsg">' + esc(regMsg) + '</p>' : '') + (regErr ? '<p class="err">' + esc(regErr) + '</p>' : '') + '</form>';
+    } else if (S.t.status === 'inscription') {
       var v = e || {};
       h = '<h2>' + (e ? 'Ton inscription' : 'Inscris ton opening') + '</h2>' +
-        '<p class="lead">Ton opening reste anonyme jusqu\'à la fin de son duel. Tu peux modifier ton inscription jusqu\'au tirage au sort.</p>' +
-        '<form id="regForm" class="stack">' +
-        '<label for="f-name">Ton pseudo (affiché après le duel)</label><input id="f-name" name="name" maxlength="40" required value="' + esc(v.name) + '">' +
+        '<p class="lead">Ton opening reste anonyme jusqu’à la fin de son duel. Tu peux modifier ton inscription jusqu’au tirage au sort.</p>' +
+        '<form id="regForm" class="stack"><label for="f-name">Ton pseudo (affiché après le duel)</label><input id="f-name" name="name" maxlength="40" required value="' + esc(v.name) + '">' +
         '<label for="f-anime">Anime</label><input id="f-anime" name="anime" maxlength="60" required value="' + esc(v.anime) + '">' +
-        '<label for="f-title">Titre de l\'opening</label><input id="f-title" name="title" maxlength="80" required value="' + esc(v.title) + '">' +
+        '<label for="f-title">Titre de l’opening</label><input id="f-title" name="title" maxlength="80" required value="' + esc(v.title) + '">' +
         '<label for="f-audio">Fichier audio de ton opening</label>' +
-        (v.audio ? '<p class="okmsg">Fichier déjà envoyé. Tu peux l\'écouter ci-dessous, ou en choisir un autre pour le remplacer.</p><audio controls preload="none" src="/audio/' + esc(v.audio) + '"></audio>' : '') +
+        (v.audio ? '<p class="okmsg">Fichier déjà envoyé.</p><audio controls preload="none" src="/audio/' + esc(v.audio) + '"></audio>' : '') +
         '<input id="f-audio" name="audio" type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac">' +
-        '<p class="hint">Formats : mp3, m4a, ogg/opus, wav, aac, flac. ' + (S.cfg ? S.cfg.maxAudioMb : 15) + ' Mo maximum. Sur iPhone, mp3 et m4a sont les plus sûrs.</p>' +
-        '<label for="f-link">Ou un lien pour l\'écouter (facultatif si tu envoies un fichier)</label><input id="f-link" name="link" type="url" inputmode="url" maxlength="300" placeholder="https://" value="' + esc(v.link) + '">' +
-        '<button class="btn primary" type="submit">' + (e ? 'Mettre à jour' : 'Enregistrer mon inscription') + '</button>' +
-        '<p class="note" id="upmsg" role="status"></p>' +
+        '<p class="hint">Formats audio · ' + (S.cfg ? S.cfg.maxAudioMb : 15) + ' Mo maximum.</p>' +
+        '<label for="f-link">Ou un lien facultatif</label><input id="f-link" name="link" type="url" maxlength="300" placeholder="https://" value="' + esc(v.link) + '">' +
+        '<button class="btn primary" type="submit">' + (e ? 'Mettre à jour' : 'Enregistrer mon inscription') + '</button><p class="note" id="upmsg" role="status"></p>' +
         (regMsg ? '<p class="okmsg">' + esc(regMsg) + '</p>' : '') + (regErr ? '<p class="err">' + esc(regErr) + '</p>' : '') + '</form>';
     } else if (e && e.matchId) {
-      var m = S.matches.find(function (x) { return x.id === e.matchId; });
-      h = '<h2>Tu participes</h2><p>Ton opening : <strong>' + esc(e.title) + '</strong> (' + esc(e.anime) + ').</p>' +
-        (m && m.status !== 'clos' ? '<p class="note">Ton duel en cours : ' + esc(roundName(m.round)) + ', duel ' + m.idx + '. Tu ne votes pas dans ce duel.</p>' : '');
+      h = '<h2>Tu participes</h2><p>Ton inscription est enregistrée.</p>';
     } else { el.hidden = true; return; }
-    el.hidden = false;
-    el.innerHTML = h;
+    el.hidden = false; el.innerHTML = h;
   }
 
   function renderChamp() {
@@ -351,22 +375,35 @@
       lastLoginKey = ''; await load();
     } else if (f.id === 'regForm') {
       regMsg = ''; regErr = '';
-      var d = {};
-      ['name', 'anime', 'title', 'link'].forEach(function (k) { d[k] = f.elements[k].value; });
-      var file = f.elements.audio.files[0], btn = f.querySelector('button[type=submit]'), up = $('upmsg');
+      var btn = f.querySelector('button[type=submit]'), upmsg = $('upmsg');
       try {
-        if (file) {
-          var max = (S && S.cfg ? S.cfg.maxAudioMb : 15) * 1048576;
-          if (file.size > max) throw new Error('Ce fichier fait ' + (file.size / 1048576).toFixed(1) + ' Mo. Le maximum est ' + Math.round(max / 1048576) + ' Mo.');
-          btn.disabled = true;
-          await uploadAudio(file, function (p) { up.textContent = 'Envoi du fichier… ' + p + ' %'; });
-          up.textContent = 'Fichier reçu.';
+        btn.disabled = true;
+        if (S.t && S.t.mediaMode === 'video3') {
+          var videos = [];
+          for (var i = 1; i <= 3; i++) {
+            var file = f.elements['video' + i].files[0];
+            if (file) {
+              if (file.size > 60 * 1048576) throw new Error('La vidéo ' + i + ' dépasse 60 Mo.');
+              if (!/^video\\/(mp4|quicktime)$/.test(file.type) && !/\\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
+              await uploadVideo(file, i, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + i + '… ' + p + ' %'; });
+            }
+            videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value });
+          }
+          await api('/api/entry', { name: f.elements.name.value, videos: videos });
+        } else {
+          var d = {};
+          ['name', 'anime', 'title', 'link'].forEach(function (k) { d[k] = f.elements[k].value; });
+          var audioFile = f.elements.audio.files[0];
+          if (audioFile) {
+            var max = (S && S.cfg ? S.cfg.maxAudioMb : 15) * 1048576;
+            if (audioFile.size > max) throw new Error('Fichier trop volumineux.');
+            await uploadAudio(audioFile, function (p) { upmsg.textContent = 'Envoi du fichier… ' + p + ' %'; });
+          }
+          await api('/api/entry', d);
         }
-        await api('/api/entry', d);
         regMsg = 'Inscription enregistrée.';
       } catch (er) { regErr = er.message; }
-      lastRegKey = '';
-      await load();
+      btn.disabled = false; lastRegKey = ''; await load();
     }
   });
 
