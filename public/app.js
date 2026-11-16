@@ -242,8 +242,8 @@
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(title) + '</p><p class="oanime">' + esc(anime) + '</p>' +
-      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" src="/video/' + esc(video.file) + '"></video>' : '') +
-      (side.audio ? '<audio class="media-audio" controls preload="metadata" aria-label="Écouter l’opening" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
+      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" src="/video/' + esc(video.file) + '"></video>' + mediaSpeedHTML() : '') +
+      (side.audio ? '<audio class="media-audio" controls preload="metadata" aria-label="Écouter l’opening" src="/audio/' + esc(side.audio) + '"></audio>' + mediaSpeedHTML() : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p>' + reactionHTML(m, side) + '</div>';
     if (mode === 'vote') {
@@ -349,6 +349,7 @@
       var index = existingVideo.findIndex(function (v) { return v.getAttribute('src') === src; });
       if (index !== -1) fresh.parentNode.replaceChild(existingVideo.splice(index, 1)[0], fresh);
     });
+    el.querySelectorAll('audio, video').forEach(function (media) { media.playbackRate = mediaSpeed(); });
   }
 
   function renderLog() {
