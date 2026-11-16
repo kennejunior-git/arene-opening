@@ -37,6 +37,7 @@
     return h % 2 === 1;
   }
   function roundName(r) {
+    if (S && S.t && S.t.thirdPlaceRound === r) return 'Duel pour la 3e place';
     var n = S.matches.filter(function (m) { return m.round === r; }).length;
     if (n === 1) return 'Finale';
     if (n === 2) return 'Demi-finales';
