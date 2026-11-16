@@ -181,7 +181,7 @@ function closeExpired() {
         else{
           const winsA=m.encounters.filter(x=>x.winnerSlot===m.a.slot).length,winsB=m.encounters.filter(x=>x.winnerSlot===m.b.slot).length;
           const totals=m.encounters.reduce((z,x)=>({a:z.a+Number(x.tally.a||0),b:z.b+Number(x.tally.b||0),ignored:z.ignored+Number(x.tally.ignored||0)}),{a:0,b:0,ignored:0});
-          const decidedByVotes=winsA===winsB,fa=decidedByVotes?totals.a:winsA,fb=decidedByVotes?totals.b:winsB,lot=fa===fb;
+          const decidedByVotes=winsA<2&&winsB<2,fa=decidedByVotes?totals.a:winsA,fb=decidedByVotes?totals.b:winsB,lot=fa===fb;
           m.winnerSlot=lot?(crypto.randomInt(2)===0?m.a.slot:m.b.slot):(fa>fb?m.a.slot:m.b.slot);
           m.byLot=lot;m.tally={a:totals.a,b:totals.b,total:totals.a+totals.b,ignored:totals.ignored,winsA,winsB,decidedByVotes};
           m.reveal={a:S.entrants[p.aUid].name,b:S.entrants[p.bUid].name};m.voters=null;m.status='clos';
