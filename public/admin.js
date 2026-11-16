@@ -97,11 +97,13 @@
     /* tableau de bord */
     var activeVideos = A.moderationVideos || [];
     var archiveMo = ((storage.archives || []).reduce(function(n,x){return n+Number(x.bytes||0);},0) / 1048576).toFixed(1);
+    var activeMo = (activeVideos.reduce(function(n,v){return n+Number(v.size||0);},0) / 1048576).toFixed(1);
     h += '<section class="panel"><h2>Tableau de bord</h2><div class="profile-stats">' +
       '<div><strong>' + Number(A.stats && A.stats.entrants || 0) + '</strong><span>Participants inscrits</span></div>' +
       '<div><strong>' + Number(A.stats && A.stats.codes || 0) + '</strong><span>Codes générés</span></div>' +
       '<div><strong>' + Number(A.stats && A.stats.voted || 0) + '</strong><span>Joueurs ayant voté</span></div>' +
       '<div><strong>' + activeVideos.length + '</strong><span>Vidéos actives</span></div>' +
+      '<div><strong>' + activeMo + ' Mo</strong><span>Stockage des vidéos actives</span></div>' +
       '<div><strong>' + (storage.archives || []).length + '</strong><span>Tournois archivés</span></div>' +
       '<div><strong>' + archiveMo + ' Mo</strong><span>Stockage libérable dans les archives</span></div>' +
       '</div></section>';
