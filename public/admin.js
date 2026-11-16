@@ -85,7 +85,7 @@
         var status = { a_payer: 'À payer', envoye: 'Envoyé · confirmation attendue', recu: 'Réception confirmée', non_recu: 'Non reçu · à vérifier' }[p.status] || p.status;
         return '<div class="block"><p><strong>' + p.place + (p.place === 1 ? 're' : 'e') + ' place · ' + esc(p.playerName) + ' · ' + Number(p.amount).toLocaleString('fr-FR') + ' FCFA</strong></p><p class="note">' + status + '</p>' +
           (mm ? '<p>Coordonnées privées : <strong>' + esc(mm.provider === 'MTN' ? 'MTN Mobile Money' : 'Orange Money') + '</strong> · <strong>' + esc(mm.number) + '</strong></p>' : '<p class="err">Le joueur n’a pas encore enregistré de numéro Mobile Money.</p>') +
-          (p.status === 'a_payer' || p.status === 'non_recu' ? '<form class="stack prizePaymentForm"><input type="hidden" name="playerId" value="' + esc(p.playerId) + '"><label>Moyen utilisé</label><select name="method" required><option value="MTN">MTN Mobile Money</option><option value="ORANGE">Orange Money</option></select><label>Référence du transfert (facultatif)</label><input name="reference" maxlength="80"><button class="btn small primary" type="submit"' + (mm ? dis : ' disabled') + '>Marquer comme envoyé</button></form>' : '') +
+          (p.status === 'a_payer' || p.status === 'non_recu' ? '<form id="prizePaymentForm" class="stack prizePaymentForm"><input type="hidden" name="playerId" value="' + esc(p.playerId) + '"><label>Moyen utilisé</label><select name="method" required><option value="MTN">MTN Mobile Money</option><option value="ORANGE">Orange Money</option></select><label>Référence du transfert (facultatif)</label><input name="reference" maxlength="80"><button class="btn small primary" type="submit"' + (mm ? dis : ' disabled') + '>Marquer comme envoyé</button></form>' : '') +
           (p.playerNote ? '<p class="note">Message du joueur : ' + esc(p.playerNote) + '</p>' : '') + '</div>';
       }).join('');
       h += '</section>';
@@ -148,7 +148,7 @@
       }
       if (allClosed) {
         h += '<div class="block"><p>Tous les duels du tour sont terminés.</p><button class="btn primary" data-act="next"' + dis + '>' +
-          (cur.length === 1 ? 'Couronner le vainqueur' : 'Lancer le tour suivant') + '</button></div>';
+          (cur.length === 1 && A.t.thirdPlacePlayers && !A.t.thirdPlaceRound ? 'Lancer le duel pour la 3e place' : cur.length === 1 ? 'Couronner le vainqueur' : 'Lancer le tour suivant') + '</button></div>';
       }
     } else {
       h += '<p class="lead">Le tournoi est terminé. Le journal public garde la trace de toutes les actions.</p>';
