@@ -21,6 +21,8 @@ const EXTEND_MINUTES = Number(process.env.EXTEND_MINUTES) || 5;
 // Après ce nombre de prolongations sans départage, le serveur tire au sort pour ne pas bloquer le tournoi.
 const MAX_EXTENSIONS = process.env.MAX_EXTENSIONS ? Number(process.env.MAX_EXTENSIONS) : 6;
 const MAX_AUDIO = Math.round((Number(process.env.MAX_AUDIO_MB) || 15) * 1024 * 1024);
+const MAX_VIDEO = Math.round((Number(process.env.MAX_VIDEO_MB) || 60) * 1024 * 1024);
+const MAX_VIDEO_SECONDS = 120;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 if (ADMIN_PASSWORD.length < 8) { console.error('ADMIN_PASSWORD est manquant ou trop court (8 caractères minimum).'); process.exit(1); }
@@ -30,7 +32,7 @@ const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
 const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
 if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
 let SECRET = process.env.SESSION_SECRET || '';
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, bonuses: [], log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, videoUploads: {}, bonuses: [], log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 function save() {
  const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
@@ -258,6 +260,66 @@ function sniffAudio(b) {
   return null;
 }
 function unlinkAudio(file) { if (/^[a-f0-9]{24}\.[a-z0-9]{3,4}$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression audio:',e.message)); }
+
+function videoBoxes(buf, start, end) {
+  const out = []; let p = start;
+  while (p + 8 <= end) {
+    let size = buf.readUInt32BE(p), header = 8;
+    const type = buf.toString('latin1', p + 4, p + 8);
+    if (size === 1) { if (p + 16 > end) break; const n = buf.readBigUInt64BE(p + 8); if (n > BigInt(Number.MAX_SAFE_INTEGER)) break; size = Number(n); header = 16; }
+    else if (size === 0) size = end - p;
+    if (size < header || p + size > end) break;
+    out.push({ type, start: p + header, end: p + size }); p += size;
+  }
+  return out;
+}
+function inspectMp4Video(buf) {
+  const top = videoBoxes(buf, 0, buf.length);
+  if (!top.some(x => x.type === 'ftyp')) return null;
+  const moov = top.find(x => x.type === 'moov'); if (!moov) return null;
+  const children = videoBoxes(buf, moov.start, moov.end);
+  const mvhd = children.find(x => x.type === 'mvhd'); if (!mvhd) return null;
+  const version = buf[mvhd.start]; let timescale, duration;
+  if (version === 0 && mvhd.start + 20 <= mvhd.end) { timescale = buf.readUInt32BE(mvhd.start + 12); duration = buf.readUInt32BE(mvhd.start + 16); }
+  else if (version === 1 && mvhd.start + 32 <= mvhd.end) { timescale = buf.readUInt32BE(mvhd.start + 20); const d = buf.readBigUInt64BE(mvhd.start + 24); if (d > BigInt(Number.MAX_SAFE_INTEGER)) return null; duration = Number(d); }
+  else return null;
+  if (!timescale || !duration) return null;
+  const hasVideo = children.filter(x => x.type === 'trak').some(trak => {
+    const mdia = videoBoxes(buf, trak.start, trak.end).find(x => x.type === 'mdia');
+    return !!(mdia && videoBoxes(buf, mdia.start, mdia.end).some(x => x.type === 'hdlr' && x.end - x.start >= 12 && buf.toString('latin1', x.start + 8, x.start + 12) === 'vide'));
+  });
+  return hasVideo ? duration / timescale : null;
+}
+function unlinkVideo(file) { if (/^[a-f0-9]{24}\\.mp4$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression vidéo:',e.message)); }
+function handleVideoUpload(req, res, slot) {
+  const vid = voterId(req);
+  if (!vid) return sendJson(res, 401, { error: "Entre ton code d'invitation d'abord." });
+  if (!S.t || S.t.status !== 'inscription') return sendJson(res, 409, { error: 'Les inscriptions sont fermées.' });
+  const key = 'video:' + vid;
+  if (tooMany(key)) return sendJson(res, 429, { error: 'Trop d’envois. Réessaie dans quelques minutes.' });
+  hit(key);
+  const len = Number(req.headers['content-length']);
+  if (!len) return sendJson(res, 411, { error: 'Taille du fichier inconnue.' });
+  if (len > MAX_VIDEO) { req.on('end', () => sendJson(res, 413, { error: 'Vidéo trop volumineuse : ' + Math.round(MAX_VIDEO / 1048576) + ' Mo maximum.' })); return req.resume(); }
+  const tmp = path.join(os.tmpdir(), 'arene-video-' + crypto.randomBytes(8).toString('hex'));
+  let size = 0;
+  const meter = new Transform({ transform(chunk, enc, cb) { size += chunk.length; if (size > MAX_VIDEO) return cb(new HttpError(413, 'Vidéo trop volumineuse.')); cb(null, chunk); } });
+  pipeline(req, meter, fs.createWriteStream(tmp), async err => {
+    if (err) { fs.unlink(tmp, () => {}); if (res.headersSent) return; return err instanceof HttpError ? sendJson(res, err.status, { error: err.message }) : sendJson(res, 400, { error: 'Envoi interrompu.' }); }
+    try {
+      const bytes = await fs.promises.readFile(tmp), duration = inspectMp4Video(bytes);
+      if (!duration || size < 2048) return sendJson(res, 415, { error: 'Fichier MP4/MOV invalide ou sans piste vidéo.' });
+      if (duration > MAX_VIDEO_SECONDS + 0.05) return sendJson(res, 400, { error: 'La vidéo dépasse 2 minutes (' + Math.ceil(duration) + ' secondes).' });
+      const file = crypto.randomBytes(12).toString('hex') + '.mp4';
+      await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: file, Body: bytes, ContentType: 'video/mp4' }));
+      S.videoUploads = S.videoUploads || {}; S.videoUploads[vid] = S.videoUploads[vid] || {};
+      if (S.videoUploads[vid][slot]) unlinkVideo(S.videoUploads[vid][slot].file);
+      S.videoUploads[vid][slot] = { file, size, duration }; await save();
+      sendJson(res, 200, { ok: true, file, duration });
+    } catch (e) { console.error('Enregistrement vidéo:', e); if (!res.headersSent) sendJson(res, 500, { error: 'Impossible d’enregistrer la vidéo.' }); }
+    finally { fs.unlink(tmp, () => {}); }
+  });
+}
 // Le fichier arrive tel quel dans le corps de la requête (pas de formulaire multipart).
 function handleUpload(req, res) {
   const vid = voterId(req);
@@ -304,6 +366,10 @@ function handleUpload(req, res) {
     finally { fs.unlink(tmp, () => {}); }
     sendJson(res, 200, { ok: true, file: file });
   });
+}
+async function serveVideo(req,res,file){
+ try { const range=String(req.headers.range||''); const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})})); const h=Object.assign({'Content-Type':'video/mp4','Accept-Ranges':'bytes','Cache-Control':'public, max-age=86400, immutable'},SEC); if(obj.ContentLength!=null)h['Content-Length']=obj.ContentLength; if(obj.ContentRange)h['Content-Range']=obj.ContentRange; res.writeHead(obj.ContentRange?206:200,h); if(req.method==='HEAD'){if(obj.Body&&obj.Body.destroy)obj.Body.destroy();return res.end();} if(obj.Body&&obj.Body.pipe)obj.Body.pipe(res); else res.end(Buffer.from(await obj.Body.transformToByteArray())); }
+ catch(e){if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');} console.error('Lecture vidéo:',e);if(!res.headersSent){res.writeHead(502,SEC);res.end('Vidéo indisponible');}}
 }
 async function serveAudio(req,res,file){
  try{const range=String(req.headers.range||'');const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})}));
@@ -784,8 +850,12 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const key = req.method + ' ' + url.pathname;
     if (key === 'POST /api/audio') return handleUpload(req, res);
+    const videoUpload = /^\\/api\\/video\\/([123])$/.exec(url.pathname);
+    if (req.method === 'POST' && videoUpload) return handleVideoUpload(req, res, Number(videoUpload[1]));
     const am = /^\/audio\/([a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac))$/.exec(url.pathname);
     if (am && (req.method === 'GET' || req.method === 'HEAD')) return serveAudio(req, res, am[1]);
+    const vm = /^\\/video\\/([a-f0-9]{24}\\.mp4)$/.exec(url.pathname);
+    if (vm && (req.method === 'GET' || req.method === 'HEAD')) return serveVideo(req, res, vm[1]);
     if (url.pathname.startsWith('/api/')) {
       const fn = routes[key];
       if (!fn) return sendJson(res, 404, { error: 'Introuvable.' });
