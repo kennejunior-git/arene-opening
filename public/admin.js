@@ -32,8 +32,9 @@
   var fetchedAt = Date.now();
 
   async function load() {
-    try { A = await api('/api/admin/state'); storage = await api('/api/admin/storage'); storageErr = ''; fetchedAt = Date.now(); authed = true; }
+    try { A = await api('/api/admin/state'); fetchedAt = Date.now(); authed = true; }
     catch (e) { if (e.status === 401) { authed = false; A = null; } else { err = 'Impossible de joindre le serveur.'; } }
+    if (authed) { try { storage = await api('/api/admin/storage'); storageErr = ''; } catch (e) { storageErr = e.message || 'Stockage indisponible.'; } }
     render(true);
   }
 
