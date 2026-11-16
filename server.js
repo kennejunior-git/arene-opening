@@ -692,7 +692,11 @@ function scoreTournament(state, totals, entries, archived) {
   const key = tournamentKey(state);
   for (const [uid, entry] of Object.entries(state.entrants || {})) {
     if (!entries[uid]) entries[uid] = [];
-    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived && state.t.status === 'termine' ? 'archive' : (state.t.status || '') });
+    if (entry && (entry.title || Array.isArray(entry.videos))) {
+      const videos = Array.isArray(entry.videos) ? entry.videos.slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).map((v) => ({ title: v.title || '', anime: v.anime || '', order: Number(v.order || 0) })) : [{ title: entry.title || '', anime: entry.anime || '', order: 1 }];
+      const place = state.t.championId === uid ? 1 : state.t.runnerUpId === uid ? 2 : state.t.thirdPlaceId === uid ? 3 : null;
+      entries[uid].push({ title: entry.title || videos[0] && videos[0].title || '', anime: entry.anime || videos[0] && videos[0].anime || '', videos, tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived && state.t.status === 'termine' ? 'archive' : (state.t.status || ''), place });
+    }
     if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
     totals[uid].tournaments.add(key);
   }
@@ -813,7 +817,7 @@ async function communityData(playerId) {
     const p = players.find((x) => x.id === playerId);
     if (!p) return Object.assign(out, { profile: null });
     const history = (entries[playerId] || []).filter((e) => e.status === 'termine' || e.status === 'archive');
-    out.profile = Object.assign({}, p, { badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
+    out.profile = Object.assign({}, p, { titleCount: history.reduce((n, e) => n + (Array.isArray(e.videos) ? e.videos.length : 1), 0), podiums: { first: history.filter((e) => e.place === 1).length, second: history.filter((e) => e.place === 2).length, third: history.filter((e) => e.place === 3).length }, badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
   }
   return out;
 }
