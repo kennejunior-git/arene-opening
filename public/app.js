@@ -232,7 +232,8 @@
       h += '<button class="vote" data-m="' + esc(m.id) + '" data-s="' + esc(side.slot) + '" aria-pressed="' + (picked ? 'true' : 'false') + '"' +
         (can && !voting ? '' : ' disabled') + ' aria-label="Voter pour l\'opening ' + pos + '">' + (picked ? 'Ton vote ✓' : 'Voter pour celui-ci') + '</button>';
     } else if (mode === 'result') {
-      var tl = m.tally || { a: 0, b: 0, total: 0 };
+      var encounterResult = m.encounters && m.encounters[m.currentEncounter - 1] && m.encounters[m.currentEncounter - 1].tally;
+      var tl = encounterResult || m.tally || { a: 0, b: 0, total: 0 };
       var n = isA ? tl.a : tl.b, pct = tl.total ? Math.round(100 * n / tl.total) : 0;
       var won = m.winnerSlot === side.slot;
       var nm = m.reveal ? (isA ? m.reveal.a : m.reveal.b) : null;
