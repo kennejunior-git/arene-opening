@@ -475,8 +475,8 @@ const routes = {
     const playerId = String(body.playerId || '');
     const player = S.codes.find((c) => c.id === playerId && c.name);
     if (!player) fail(400, 'Choisis un participant valide.');
-    const points = Math.trunc(Number(body.points));
-    if (!Number.isFinite(points) || points === 0 || Math.abs(points) > 1000) fail(400, 'Le bonus doit être un nombre entier entre -1000 et 1000, différent de zéro.');
+    const points = Number(body.points);
+    if (!Number.isInteger(points) || points === 0 || Math.abs(points) > 1000) fail(400, 'Le bonus doit être un nombre entier entre -1000 et 1000, différent de zéro.');
     const reason = clean(body.reason, 200);
     if (reason.length < 3) fail(400, 'Indique une raison de 3 caractères minimum.');
     S.bonuses = Array.isArray(S.bonuses) ? S.bonuses : [];
