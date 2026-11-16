@@ -247,6 +247,11 @@
 
   function renderDuels() {
     var el = $('duels');
+    // Preserve audio across the 10-second state refresh: replacing innerHTML
+    // destroys the media elements and previously cut playback short.
+    var playback = Array.prototype.map.call(el.querySelectorAll('audio'), function (a) {
+      return { src: a.getAttribute('src'), time: a.currentTime || 0, paused: a.paused };
+    });
     if (!S || !S.t) { el.innerHTML = ''; return; }
     if (S.t.status === 'inscription') {
       el.innerHTML = '<h2>Duels</h2><p class="lead">Les duels apparaîtront ici après le tirage au sort, avec les deux openings face à face.</p>';
@@ -261,6 +266,22 @@
       h += '<div class="round"><div class="round-head"><h3>' + esc(roundName(r)) + '</h3><span class="chip">Tour ' + r + '</span></div>' + ms.map(duelHTML).join('') + '</div>';
     });
     el.innerHTML = h;
+    if (playback.length) {
+      Array.prototype.forEach.call(el.querySelectorAll('audio'), function (a) {
+        var saved = playback.find(function (p) { return p.src === a.getAttribute('src'); });
+        if (!saved || !saved.time) return;
+        var restore = function () {
+          a.removeEventListener('loadedmetadata', restore);
+          try { a.currentTime = saved.time; } catch (e) { /* le navigateur peut refuser le seek */ }
+          if (!saved.paused) {
+            var started = a.play();
+            if (started && started.catch) started.catch(function () {});
+          }
+        };
+        if (a.readyState >= 1) restore();
+        else a.addEventListener('loadedmetadata', restore);
+      });
+    }
   }
 
   function renderLog() {
