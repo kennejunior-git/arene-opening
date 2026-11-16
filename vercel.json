@@ -1,0 +1,30 @@
+{
+  "cleanUrls": true,
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://arene-opening.onrender.com/api/:path*"
+    },
+    {
+      "source": "/video/:path*",
+      "destination": "https://arene-opening.onrender.com/video/:path*"
+    },
+    {
+      "source": "/audio/:path*",
+      "destination": "https://arene-opening.onrender.com/audio/:path*"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/stats",
+      "destination": "/stats.html"
+    },
+    {
+      "source": "/community",
+      "destination": "/community.html"
+    }
+  ]
+}
