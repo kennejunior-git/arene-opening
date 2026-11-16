@@ -124,7 +124,7 @@
       var pend = cur.filter(function (m) { return m.status === 'attente'; });
       var allClosed = cur.length > 0 && cur.every(function (m) { return m.status === 'clos'; });
       var vm = A.cfg.voteMinutes, em = A.cfg.extendMinutes;
-      h += '<p class="note">Tour ' + A.t.round + ' sur ' + A.t.roundsTotal + ' · ' + cur.length + ' duel' + (cur.length > 1 ? 's' : '') + '. Chaque vote dure ' + fmtMin(vm) +
+      h += '<p class="note">' + (A.t.thirdPlaceRound === A.t.round ? 'Duel spécial pour déterminer la 3e place' : 'Tour ' + A.t.round + ' sur ' + A.t.roundsTotal) + ' · ' + cur.length + ' duel' + (cur.length > 1 ? 's' : '') + '. Chaque vote dure ' + fmtMin(vm) +
         '. En cas d\'égalité, ' + fmtMin(em) + ' sont ajoutées automatiquement (jusqu\'à ' + A.cfg.maxExtensions + ' fois, puis le serveur tire au sort). La clôture se fait toute seule.</p>';
       h += '<ul class="dlist">' + cur.map(function (m) {
         var info = '', btn = '';
