@@ -227,8 +227,8 @@
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(title) + '</p><p class="oanime">' + esc(anime) + '</p>' +
-      (video && video.file ? '<video controls preload="metadata" playsinline style="width:100%;max-height:320px" src="/video/' + esc(video.file) + '"></video>' : '') +
-      (side.audio ? '<audio controls preload="none" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
+      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" src="/video/' + esc(video.file) + '"></video>' : '') +
+      (side.audio ? '<audio class="media-audio" controls preload="metadata" aria-label="Écouter l’opening" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p>' + reactionHTML(m, side) + '</div>';
     if (mode === 'vote') {
