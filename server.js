@@ -135,86 +135,74 @@ function createRound(r, ids) {
     const idx = i / 2 + 1, id = 'r' + r + 'm' + idx;
     let aU = order[i], bU = order[i + 1] || null;
     if (bU && crypto.randomInt(2) === 1) { const x = aU; aU = bU; bU = x; }
-    const side = (u, k) => { const e = S.entrants[u]; return { slot: id + k, title: e.title, anime: e.anime, link: e.link || null, audio: e.audio ? e.audio.file : null, videos: e.videos || null }; };
-    const m = { id: id, round: r, idx: idx, status: bU ? 'attente' : 'clos', a: side(aU, 'a'), b: bU ? side(bU, 'b') : null };
-    if (!bU) { m.bye = true; m.winnerSlot = id + 'a'; m.reveal = { a: S.entrants[aU].name }; }
-    S.matches[id] = m;
-    S.pairings[id] = { aUid: aU, bUid: bU };
-    S.entrants[aU].matchId = id; S.entrants[aU].slot = id + 'a';
-    if (bU) { S.entrants[bU].matchId = id; S.entrants[bU].slot = id + 'b'; }
+    const side = (u, k) => { const e = S.entrants[u]; const videos = Array.isArray(e.videos) ? e.videos.slice().sort((x,y) => Number(x.order || 0) - Number(y.order || 0)) : null; return { slot:id+k, title:e.title, anime:e.anime, link:e.link||null, audio:e.audio?e.audio.file:null, videos }; };
+    const m = { id, round:r, idx, status:bU?'attente':'clos', a:side(aU,'a'), b:bU?side(bU,'b'):null };
+    if (bU && S.t && S.t.mediaMode === 'video3') { m.currentEncounter=1; m.encounters=[1,2,3].map(index=>({index,status:'attente',extensions:0})); }
+    if (!bU) { m.bye=true; m.winnerSlot=id+'a'; m.reveal={a:S.entrants[aU].name}; }
+    S.matches[id]=m; S.pairings[id]={aUid:aU,bUid:bU};
+    S.entrants[aU].matchId=id; S.entrants[aU].slot=id+'a';
+    if (bU) { S.entrants[bU].matchId=id; S.entrants[bU].slot=id+'b'; }
   }
 }
 const matchList = () => Object.values(S.matches).sort((x, y) => x.round - y.round || x.idx - y.idx);
 const currentMatches = () => matchList().filter((m) => m.round === S.t.round);
 
-function countBallots(m) {
-  const p = S.pairings[m.id];
-  const byId = new Map(S.codes.map((c) => [c.id, c]));
-  const r = { a: 0, b: 0, ign: 0, names: { a: [], b: [] } };
-  for (const cid of Object.keys(S.votes)) {
-    const pick = S.votes[cid][m.id];
-    if (pick !== m.a.slot && pick !== m.b.slot) continue;
-    if (cid === p.aUid || cid === p.bUid) { r.ign++; continue; }
-    const c = byId.get(cid);
-    const nm = c && c.name ? c.name : 'Anonyme';
-    if (pick === m.a.slot) { r.a++; r.names.a.push(nm); } else { r.b++; r.names.b.push(nm); }
+function countBallots(m, encounterIndex) {
+  const p=S.pairings[m.id], byId=new Map(S.codes.map(c=>[c.id,c]));
+  const voteKey=m.encounters ? m.id+':e'+(encounterIndex||m.currentEncounter||1) : m.id;
+  const r={a:0,b:0,ign:0,names:{a:[],b:[]}};
+  for(const cid of Object.keys(S.votes)){
+    const pick=S.votes[cid][voteKey];
+    if(pick!==m.a.slot&&pick!==m.b.slot)continue;
+    if(cid===p.aUid||cid===p.bUid){r.ign++;continue;}
+    const c=byId.get(cid),nm=c&&c.name?c.name:'Anonyme';
+    if(pick===m.a.slot){r.a++;r.names.a.push(nm);}else{r.b++;r.names.b.push(nm);}
   }
-  const cmp = (x, y) => x.localeCompare(y, 'fr', { sensitivity: 'base' });
-  r.names.a.sort(cmp); r.names.b.sort(cmp);
-  return r;
+  const cmp=(x,y)=>x.localeCompare(y,'fr',{sensitivity:'base'});
+  r.names.a.sort(cmp);r.names.b.sort(cmp);return r;
 }
-
 function closeExpired() {
-  const now = Date.now();
-  let changed = false;
-  for (const m of matchList()) {
-    // Ancien état « égalité » d'une version précédente : on relance simplement une prolongation.
-    if (m.status === 'egalite') { m.status = 'ouvert'; m.closesAt = now + EXTEND_MINUTES * 60000; changed = true; continue; }
-    if (m.status !== 'ouvert' || now < m.closesAt) continue;
-    const p = S.pairings[m.id];
-    const r = countBallots(m);
-    const label = 'Tour ' + m.round + ', duel ' + m.idx;
-    if (r.a === r.b && (m.extensions || 0) < MAX_EXTENSIONS) {
-      m.extensions = (m.extensions || 0) + 1;
-      const late = now - m.closesAt > 30000;
-      m.closesAt = (late ? now : m.closesAt) + EXTEND_MINUTES * 60000;
-      logIt(label + ' : égalité ' + r.a + ' à ' + r.b + '. Prolongation ' + m.extensions + ' : +' + durLabel(EXTEND_MINUTES) + ', fin à ' + frDate(m.closesAt) + '.');
-    } else {
-      const byLot = r.a === r.b;
-      m.status = 'clos';
-      m.winnerSlot = byLot ? (crypto.randomInt(2) === 0 ? m.a.slot : m.b.slot) : (r.a > r.b ? m.a.slot : m.b.slot);
-      m.byLot = byLot;
-      m.tally = { a: r.a, b: r.b, total: r.a + r.b, ignored: r.ign };
-      m.voters = r.names;
-      const an = S.entrants[p.aUid].name, bn = S.entrants[p.bUid].name;
-      m.reveal = { a: an, b: bn };
-      const wn = m.winnerSlot === m.a.slot ? an : bn;
-      logIt(label + ' clôturé automatiquement : ' + an + ' ' + r.a + ' – ' + r.b + ' ' + bn +
-        (r.ign ? ' (' + r.ign + ' vote' + (r.ign > 1 ? 's' : '') + ' écarté' + (r.ign > 1 ? 's' : '') + ')' : '') +
-        (byLot ? '. Égalité persistante après ' + (m.extensions || 0) + ' prolongation' + ((m.extensions || 0) > 1 ? 's' : '') + ' : gagnant tiré au sort par le serveur' : '') +
-        '. Qualifié : ' + wn + '.');
+  const now=Date.now();let changed=false;
+  for(const m of matchList()){
+    if(m.status==='egalite'){m.status='ouvert';m.closesAt=now+EXTEND_MINUTES*60000;changed=true;continue;}
+    if(m.status!=='ouvert'||now<m.closesAt)continue;
+    const p=S.pairings[m.id],idx=m.encounters?(m.currentEncounter||1):0;
+    const r=countBallots(m,idx||undefined),label='Tour '+m.round+', duel '+m.idx+(m.encounters?', affrontement '+idx+'/3':'');
+    if(r.a===r.b&&(m.extensions||0)<MAX_EXTENSIONS){
+      m.extensions=(m.extensions||0)+1;if(m.encounters)m.encounters[idx-1].extensions=m.extensions;
+      const late=now-m.closesAt>30000;m.closesAt=(late?now:m.closesAt)+EXTEND_MINUTES*60000;
+      logIt(label+' : égalité '+r.a+' à '+r.b+'. Prolongation '+m.extensions+' : +'+durLabel(EXTEND_MINUTES)+', fin à '+frDate(m.closesAt)+'.');
+    }else{
+      const tied=r.a===r.b,byLot=tied&&!m.encounters,winner=tied?null:(r.a>r.b?m.a.slot:m.b.slot);
+      if(m.encounters){
+        const enc=m.encounters[idx-1];Object.assign(enc,{status:'clos',tally:{a:r.a,b:r.b,total:r.a+r.b,ignored:r.ign},winnerSlot:winner,byLot:false});
+        m.status='attente';m.closesAt=null;m.live=false;m.extensions=0;
+        if(idx<3){m.currentEncounter=idx+1;logIt(label+' terminé : '+r.a+' – '+r.b+(tied?' (égalité)':'')+'. Le prochain affrontement est prêt.');}
+        else{
+          const winsA=m.encounters.filter(x=>x.winnerSlot===m.a.slot).length,winsB=m.encounters.filter(x=>x.winnerSlot===m.b.slot).length;
+          const totals=m.encounters.reduce((z,x)=>({a:z.a+Number(x.tally.a||0),b:z.b+Number(x.tally.b||0),ignored:z.ignored+Number(x.tally.ignored||0)}),{a:0,b:0,ignored:0});
+          const decidedByVotes=winsA===winsB,fa=decidedByVotes?totals.a:winsA,fb=decidedByVotes?totals.b:winsB,lot=fa===fb;
+          m.winnerSlot=lot?(crypto.randomInt(2)===0?m.a.slot:m.b.slot):(fa>fb?m.a.slot:m.b.slot);
+          m.byLot=lot;m.tally={a:totals.a,b:totals.b,total:totals.a+totals.b,ignored:totals.ignored,winsA,winsB,decidedByVotes};
+          m.reveal={a:S.entrants[p.aUid].name,b:S.entrants[p.bUid].name};m.voters=null;m.status='clos';
+          logIt(label+' clôturé : '+m.reveal.a+' '+winsA+' victoire(s), '+m.reveal.b+' '+winsB+' victoire(s). Total des votes '+totals.a+' – '+totals.b+(decidedByVotes?' (départage au total des votes)':'')+(lot?' (égalité parfaite, tirage au sort)':'')+'.');
+        }
+      }else{
+        m.status='clos';m.winnerSlot=byLot?(crypto.randomInt(2)===0?m.a.slot:m.b.slot):winner;m.byLot=byLot;
+        m.tally={a:r.a,b:r.b,total:r.a+r.b,ignored:r.ign};m.voters=r.names;
+        m.reveal={a:S.entrants[p.aUid].name,b:S.entrants[p.bUid].name};
+        logIt(label+' clôturé automatiquement : '+m.reveal.a+' '+r.a+' – '+r.b+' '+m.reveal.b+(byLot?' (égalité persistante, tirage au sort)':'')+'.');
+      }
     }
-    changed = true;
+    changed=true;
   }
-  if (changed) save();
+  if(changed)save();
 }
-
 /* ---------- vues JSON ---------- */
 function pubMatch(m) {
-  const o = {
-    id: m.id, round: m.round, idx: m.idx, status: m.status, bye: !!m.bye, a: m.a, b: m.b,
-    closesAt: m.closesAt || null, extensions: m.extensions || 0, live: !!m.live,
-    eligible: Math.max(0, S.codes.length - (m.bye ? 0 : 2))
-  };
-  if (m.status === 'ouvert') {
-    const r = countBallots(m);
-    o.votes = r.a + r.b;
-    if (m.live) o.liveTally = { a: r.a, b: r.b };
-  }
-  if (m.status === 'clos') {
-    o.tally = m.tally || null; o.winnerSlot = m.winnerSlot; o.reveal = m.reveal;
-    o.voters = m.voters || null; o.byLot = !!m.byLot;
-  }
+  const o={id:m.id,round:m.round,idx:m.idx,status:m.status,bye:!!m.bye,a:m.a,b:m.b,closesAt:m.closesAt||null,extensions:m.extensions||0,live:!!m.live,eligible:Math.max(0,S.codes.length-(m.bye?0:2)),currentEncounter:m.currentEncounter||1,encounters:m.encounters||null};
+  if(m.status==='ouvert'){const r=countBallots(m,m.encounters?m.currentEncounter:undefined);o.votes=r.a+r.b;if(m.live)o.liveTally={a:r.a,b:r.b};}
+  if(m.status==='clos'){o.tally=m.tally||null;o.winnerSlot=m.winnerSlot;o.reveal=m.reveal;o.voters=m.voters||null;o.byLot=!!m.byLot;}
   return o;
 }
 function publicState(vid) {
@@ -291,7 +279,7 @@ function inspectMp4Video(buf) {
   });
   return hasVideo ? duration / timescale : null;
 }
-function unlinkVideo(file) { if (/^[a-f0-9]{24}\\.mp4$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression vidéo:',e.message)); }
+function unlinkVideo(file) { if (/^[a-f0-9]{24}\.mp4$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression vidéo:',e.message)); }
 function handleVideoUpload(req, res, slot) {
   const vid = voterId(req);
   if (!vid) return sendJson(res, 401, { error: "Entre ton code d'invitation d'abord." });
@@ -452,12 +440,14 @@ const routes = {
       const old = S.entrants[vid] && Array.isArray(S.entrants[vid].videos) ? S.entrants[vid].videos : [];
       const uploaded = (S.videoUploads && S.videoUploads[vid]) || {};
       const videos = submitted.map((v, i) => {
-        const title = clean(v && v.title, 80), anime = clean(v && v.anime, 60);
+        const title = clean(v && v.title, 80), anime = clean(v && v.anime, 60), order = Number(v && v.order);
         const up = uploaded[i + 1] || old[i];
         if (!title || !anime) fail(400, 'Complète le titre et l’anime des 3 vidéos.');
         if (!up || !up.file) fail(400, 'Envoie les 3 vidéos avant de valider.');
-        return { title, anime, file: up.file, duration: Number(up.duration || 0) };
+        if (![1,2,3].includes(order)) fail(400, 'Choisis l’ordre de passage des 3 vidéos (1, 2 et 3).');
+        return { title, anime, file: up.file, duration: Number(up.duration || 0), order };
       });
+      if (new Set(videos.map(v => v.order)).size !== 3) fail(400, 'Chaque vidéo doit avoir un ordre de passage différent (1, 2 et 3).');
       S.entrants[vid] = { name, title: videos[0].title, anime: videos[0].anime, videos };
       delete S.videoUploads[vid];
       save();
@@ -485,8 +475,9 @@ const routes = {
     if (body.slot !== m.a.slot && body.slot !== m.b.slot) fail(400, 'Choix invalide.');
     const p = S.pairings[m.id];
     if (vid === p.aUid || vid === p.bUid) fail(403, 'Tu ne votes pas dans ton propre duel.');
+    const voteKey = m.encounters ? m.id + ':e' + m.currentEncounter : m.id;
     S.votes[vid] = S.votes[vid] || {};
-    S.votes[vid][m.id] = body.slot;
+    S.votes[vid][voteKey] = body.slot;
     save();
     return { ok: true };
   },
@@ -605,8 +596,8 @@ const routes = {
     if (!pend.length) fail(409, 'Aucun duel à ouvrir.');
     const live = body.live === true;
     const now = Date.now(), end = now + VOTE_MINUTES * 60000;
-    pend.forEach((m) => { m.status = 'ouvert'; m.opensAt = now; m.closesAt = end; m.live = live; m.extensions = 0; });
-    const what = pend.length === 1 ? 'le duel ' + pend[0].idx : pend.length + ' duels';
+    pend.forEach((m) => { m.status = 'ouvert'; m.opensAt = now; m.closesAt = end; m.live = live; m.extensions = 0; if (m.encounters) m.encounters[m.currentEncounter - 1].status = 'ouvert'; });
+    const what = pend.length === 1 ? 'le duel ' + pend[0].idx + (pend[0].encounters ? ', affrontement ' + pend[0].currentEncounter + '/3' : '') : pend.length + ' duels';
     logIt('Tour ' + S.t.round + ' : vote ouvert pour ' + what + ', ' + durLabel(VOTE_MINUTES) + ', fin à ' + frDate(end) +
       '. Score en direct : ' + (live ? 'affiché' : 'caché jusqu\'à la clôture') + '. Égalité : +' + durLabel(EXTEND_MINUTES) + ' automatiques.');
     save();
