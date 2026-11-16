@@ -217,6 +217,21 @@
     h+='</div>'+(!S.me||!S.me.name?'<small>Connecte-toi pour réagir</small>':'')+'</div>';return h;
   }
 
+
+  function mediaSpeed() {
+    try {
+      var v = Number(localStorage.getItem('arene-media-speed'));
+      return [0.75, 1, 1.25, 1.5, 2].indexOf(v) !== -1 ? v : 1;
+    } catch (e) { return 1; }
+  }
+  function mediaSpeedHTML() {
+    var current = mediaSpeed();
+    return '<label class="media-speed">Vitesse <select data-media-speed aria-label="Vitesse de lecture">' +
+      [0.75, 1, 1.25, 1.5, 2].map(function (v) {
+        return '<option value="' + v + '"' + (v === current ? ' selected' : '') + '>' + String(v).replace('.', ',') + '×</option>';
+      }).join('') + '</select></label>';
+  }
+
   function optHTML(side, pos, m, mode) {
     var u = safeUrl(side.link), voteKey = m.encounters ? m.id + ':e' + m.currentEncounter : m.id;
     var picked = S.me && S.me.votes[voteKey] === side.slot;
@@ -394,6 +409,16 @@
     else if (b.id === 'logoutBtn') api('/api/logout', {}).then(function () { lastLoginKey = ''; lastRegKey = ''; return load(); });
   });
 
+
+  document.addEventListener('change', function (e) {
+    var select = e.target;
+    if (!select.matches('[data-media-speed]')) return;
+    var speed = Number(select.value);
+    if ([0.75, 1, 1.25, 1.5, 2].indexOf(speed) === -1) return;
+    try { localStorage.setItem('arene-media-speed', String(speed)); } catch (err) { /* stockage facultatif */ }
+    document.querySelectorAll('audio, video').forEach(function (media) { media.playbackRate = speed; });
+  });
+
   document.addEventListener('submit', async function (e) {
     e.preventDefault();
     var f = e.target;
@@ -460,9 +485,10 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
 
   document.addEventListener('play', function (e) {
-    document.querySelectorAll('audio').forEach(function (a) { if (a !== e.target) a.pause(); });
+    document.querySelectorAll('audio, video').forEach(function (media) { if (media !== e.target) media.pause(); });
   }, true);
 
+  document.querySelectorAll('audio, video').forEach(function (media) { media.playbackRate = mediaSpeed(); });
   renderAll();
   load();
 })();
