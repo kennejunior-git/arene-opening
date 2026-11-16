@@ -1,0 +1,12 @@
+{
+  "name": "arene-openings",
+  "version": "1.0.0",
+  "description": "Tournoi d'openings en duels, vote anonyme par codes d'invitation.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

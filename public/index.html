@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Arène des Openings</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header class="top">
+    <p class="eyebrow">Tournoi d'openings · duels en binôme</p>
+    <h1 id="ttl">Arène des Openings</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div id="notice" role="status"></div>
+  <section id="login" class="panel" hidden></section>
+  <section id="reg" class="panel" hidden></section>
+  <section id="champ" hidden></section>
+  <section id="duels" class="sec" aria-live="polite"></section>
+
+  <section id="rules" class="sec">
+    <h2>Règles du jeu</h2>
+    <ul class="rules">
+      <li><strong>Un code, un vote par duel.</strong> Chaque membre reçoit un code d'invitation personnel à usage unique. Tu peux changer ton choix jusqu'à la fin du duel.</li>
+      <li><strong>Anonymat.</strong> Les openings sont présentés sans le nom de leur auteur. Les noms apparaissent quand le duel est terminé.</li>
+      <li><strong>Scores cachés.</strong> Personne ne voit les résultats avant la clôture, pour que le score n'influence pas les votes.</li>
+      <li><strong>Clôture automatique.</strong> À l'heure annoncée, le serveur compte les voix et publie le résultat. L'organisateur ne peut ni voter, ni modifier un vote, ni choisir un gagnant. Celui qui a le plus de voix gagne.</li>
+      <li><strong>Pas de campagne.</strong> Demander des votes pour soi est interdit. Les participants ne votent pas dans leur propre duel.</li>
+    </ul>
+  </section>
+
+  <section id="journal" class="sec">
+    <h2>Journal public</h2>
+    <p class="lead">Chaque action de l'organisateur est écrite ici avec son heure : codes générés, tirage, ouverture et clôture des votes.</p>
+    <ul class="log" id="log"></ul>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
