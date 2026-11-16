@@ -38,7 +38,7 @@
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
@@ -126,6 +126,22 @@
     if (busy) h += '<p class="note">Action en cours…</p>';
     if (info) h += '<p class="okmsg">' + esc(info) + '</p>';
     if (err) h += '<p class="err">' + esc(err) + '</p>';
+    h += '</section>';
+
+    /* bonus manuels */
+    h += '<section class="panel"><h2>Bonus et pénalités</h2><p class="lead">Tu décides librement des points à ajouter ou retirer. 3 points sont attribués automatiquement par duel remporté ; les qualifications d’office ne rapportent aucun point. Chaque ajustement est conservé dans l’historique.</p>';
+    if (A.players && A.players.length) {
+      h += '<form id="bonusForm" class="stack"><label for="bonusPlayer">Participant</label><select id="bonusPlayer" name="playerId" required>' +
+        A.players.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('') +
+        '</select><label for="bonusPoints">Points à ajouter ou retirer</label><input id="bonusPoints" name="points" type="number" min="-1000" max="1000" step="1" placeholder="Ex. 2 ou -1" required>' +
+        '<label for="bonusReason">Raison obligatoire</label><input id="bonusReason" name="reason" maxlength="200" minlength="3" placeholder="Explique la décision" required>' +
+        '<button class="btn primary" type="submit"' + dis + '>Enregistrer le bonus</button></form>';
+    } else h += '<p class="note">Aucun participant avec pseudo pour le moment.</p>';
+    if (A.bonuses && A.bonuses.length) {
+      h += '<h3>Historique des ajustements</h3><ul class="history">' + A.bonuses.slice().reverse().slice(0, 30).map(function (b) {
+        return '<li><strong>' + esc(b.playerName) + ' · ' + (b.points > 0 ? '+' : '') + b.points + ' pts</strong><span>' + esc(b.reason) + ' · ' + esc(b.tournamentName || '') + '</span></li>';
+      }).join('') + '</ul>';
+    } else h += '<p class="note">Aucun bonus attribué.</p>';
     h += '</section>';
 
     /* nouveau tournoi */
