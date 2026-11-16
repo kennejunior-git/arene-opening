@@ -26,14 +26,19 @@ Il faut un hébergeur qui fait tourner Node **et garde un disque persistant** (R
 ## Déroulé d'un tournoi
 
 1. `/admin` : crée le tournoi, génère un code par membre du groupe, envoie chaque code en privé.
-2. Les participants entrent leur code puis inscrivent leur opening (anime, titre, lien).
+2. Chaque personne entre son code et choisit un pseudo (une seule fois). Les participants inscrivent ensuite leur opening (anime, titre, lien).
 3. Tu fermes les inscriptions : le serveur tire les binômes au hasard.
-4. Tu ouvres les votes du tour (durée au choix). À l'heure, le serveur compte et publie tout seul.
-5. En cas d'égalité, tu prolonges le vote. Sinon tu lances le tour suivant, jusqu'à la finale.
+4. Tu ouvres les votes, duel par duel ou tous d'un coup. Un vote dure **15 minutes**. Tu peux cocher « score en direct » ; sinon le score reste caché jusqu'à la clôture.
+5. À l'heure, le serveur compte et publie tout seul. En cas d'égalité, **5 minutes** s'ajoutent automatiquement. Après 6 prolongations sans départage, le serveur tire le gagnant au sort et l'écrit dans le journal.
+6. Quand tous les duels du tour sont terminés, tu lances le tour suivant, jusqu'à la finale.
+
+La page `/stats` montre les votes en direct (nombre de votes, jamais les noms pendant le vote), les duels terminés avec la liste des pseudos des votants, et les chiffres du tournoi.
+
+Les durées se changent avec les variables `VOTE_MINUTES`, `EXTEND_MINUTES` et `MAX_EXTENSIONS` (utile pour tester avec des durées courtes).
 
 ## Ce que le site garantit, et ses limites
 
-- Un code = un vote par duel. Le serveur ne révèle ni les noms ni les scores avant la clôture.
+- Un code = un vote par duel. Le serveur ne révèle ni les noms des auteurs, ni les noms des votants, ni les scores (sauf si tu actives le score en direct) avant la clôture.
 - L'organisateur ne vote pas, ne voit pas qui est inscrit, ne peut pas modifier un vote ni choisir un gagnant, et ne peut pas clôturer à la main.
 - Chaque action est écrite dans le journal public. Le nombre de codes émis est affiché sur le site.
 - **Limites :** un membre peut prêter son code, ou en demander un second sous un autre nom. Génère exactement autant de codes que de membres, et compare avec le nombre affiché. Celui qui héberge le serveur peut techniquement modifier le fichier de données : choisis un hébergeur de confiance.

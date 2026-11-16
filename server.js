@@ -12,6 +12,11 @@ const PORT = Number(process.env.PORT) || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const TICK_MS = Number(process.env.TICK_MS) || 5000;
+// Durée d'un vote et prolongation en cas d'égalité, en minutes (les variables ne servent qu'aux tests).
+const VOTE_MINUTES = Number(process.env.VOTE_MINUTES) || 15;
+const EXTEND_MINUTES = Number(process.env.EXTEND_MINUTES) || 5;
+// Après ce nombre de prolongations sans départage, le serveur tire au sort pour ne pas bloquer le tournoi.
+const MAX_EXTENSIONS = process.env.MAX_EXTENSIONS ? Number(process.env.MAX_EXTENSIONS) : 6;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 if (ADMIN_PASSWORD.length < 8) {
@@ -73,6 +78,9 @@ function voterId(req) {
   const v = unmk(parseCookies(req).v);
   return v && S.codes.some((c) => c.id === v) ? v : null;
 }
+const codeOf = (vid) => S.codes.find((c) => c.id === vid) || null;
+const cleanName = (s) => clean(s, 30);
+const nameTaken = (name) => S.codes.some((c) => c.name && c.name.toLowerCase() === name.toLowerCase());
 function isAdmin(req) {
   const v = unmk(parseCookies(req).a);
   if (!v || !v.startsWith('adm:')) return false;
@@ -144,32 +152,52 @@ function createRound(r, ids) {
 const matchList = () => Object.values(S.matches).sort((x, y) => x.round - y.round || x.idx - y.idx);
 const currentMatches = () => matchList().filter((m) => m.round === S.t.round);
 
+function countBallots(m) {
+  const p = S.pairings[m.id];
+  const byId = new Map(S.codes.map((c) => [c.id, c]));
+  const r = { a: 0, b: 0, ign: 0, names: { a: [], b: [] } };
+  for (const cid of Object.keys(S.votes)) {
+    const pick = S.votes[cid][m.id];
+    if (pick !== m.a.slot && pick !== m.b.slot) continue;
+    if (cid === p.aUid || cid === p.bUid) { r.ign++; continue; }
+    const c = byId.get(cid);
+    const nm = c && c.name ? c.name : 'Anonyme';
+    if (pick === m.a.slot) { r.a++; r.names.a.push(nm); } else { r.b++; r.names.b.push(nm); }
+  }
+  const cmp = (x, y) => x.localeCompare(y, 'fr', { sensitivity: 'base' });
+  r.names.a.sort(cmp); r.names.b.sort(cmp);
+  return r;
+}
+
 function closeExpired() {
   const now = Date.now();
   let changed = false;
   for (const m of matchList()) {
+    // Ancien état « égalité » d'une version précédente : on relance simplement une prolongation.
+    if (m.status === 'egalite') { m.status = 'ouvert'; m.closesAt = now + EXTEND_MINUTES * 60000; changed = true; continue; }
     if (m.status !== 'ouvert' || now < m.closesAt) continue;
     const p = S.pairings[m.id];
-    let a = 0, b = 0, ign = 0;
-    for (const cid of Object.keys(S.votes)) {
-      const pick = S.votes[cid][m.id];
-      if (pick !== m.a.slot && pick !== m.b.slot) continue;
-      if (cid === p.aUid || cid === p.bUid) { ign++; continue; }
-      if (pick === m.a.slot) a++; else b++;
-    }
-    m.tally = { a: a, b: b, total: a + b, ignored: ign };
+    const r = countBallots(m);
     const label = 'Tour ' + m.round + ', duel ' + m.idx;
-    if (a === b) {
-      m.status = 'egalite';
-      logIt(label + ' : égalité ' + a + ' à ' + b + '. Le vote doit être prolongé.');
+    if (r.a === r.b && (m.extensions || 0) < MAX_EXTENSIONS) {
+      m.extensions = (m.extensions || 0) + 1;
+      const late = now - m.closesAt > 30000;
+      m.closesAt = (late ? now : m.closesAt) + EXTEND_MINUTES * 60000;
+      logIt(label + ' : égalité ' + r.a + ' à ' + r.b + '. Prolongation ' + m.extensions + ' : +' + durLabel(EXTEND_MINUTES) + ', fin à ' + frDate(m.closesAt) + '.');
     } else {
+      const byLot = r.a === r.b;
       m.status = 'clos';
-      m.winnerSlot = a > b ? m.a.slot : m.b.slot;
+      m.winnerSlot = byLot ? (crypto.randomInt(2) === 0 ? m.a.slot : m.b.slot) : (r.a > r.b ? m.a.slot : m.b.slot);
+      m.byLot = byLot;
+      m.tally = { a: r.a, b: r.b, total: r.a + r.b, ignored: r.ign };
+      m.voters = r.names;
       const an = S.entrants[p.aUid].name, bn = S.entrants[p.bUid].name;
       m.reveal = { a: an, b: bn };
-      logIt(label + ' clôturé automatiquement : ' + an + ' ' + a + ' – ' + b + ' ' + bn +
-        (ign ? ' (' + ign + ' vote' + (ign > 1 ? 's' : '') + ' écarté' + (ign > 1 ? 's' : '') + ')' : '') +
-        '. Qualifié : ' + (a > b ? an : bn) + '.');
+      const wn = m.winnerSlot === m.a.slot ? an : bn;
+      logIt(label + ' clôturé automatiquement : ' + an + ' ' + r.a + ' – ' + r.b + ' ' + bn +
+        (r.ign ? ' (' + r.ign + ' vote' + (r.ign > 1 ? 's' : '') + ' écarté' + (r.ign > 1 ? 's' : '') + ')' : '') +
+        (byLot ? '. Égalité persistante après ' + (m.extensions || 0) + ' prolongation' + ((m.extensions || 0) > 1 ? 's' : '') + ' : gagnant tiré au sort par le serveur' : '') +
+        '. Qualifié : ' + wn + '.');
     }
     changed = true;
   }
@@ -178,24 +206,37 @@ function closeExpired() {
 
 /* ---------- vues JSON ---------- */
 function pubMatch(m) {
-  const o = { id: m.id, round: m.round, idx: m.idx, status: m.status, bye: !!m.bye, a: m.a, b: m.b, closesAt: m.closesAt || null };
-  if (m.status === 'clos' || m.status === 'egalite') o.tally = m.tally || null;
-  if (m.status === 'clos') { o.winnerSlot = m.winnerSlot; o.reveal = m.reveal; }
+  const o = {
+    id: m.id, round: m.round, idx: m.idx, status: m.status, bye: !!m.bye, a: m.a, b: m.b,
+    closesAt: m.closesAt || null, extensions: m.extensions || 0, live: !!m.live,
+    eligible: Math.max(0, S.codes.length - (m.bye ? 0 : 2))
+  };
+  if (m.status === 'ouvert') {
+    const r = countBallots(m);
+    o.votes = r.a + r.b;
+    if (m.live) o.liveTally = { a: r.a, b: r.b };
+  }
+  if (m.status === 'clos') {
+    o.tally = m.tally || null; o.winnerSlot = m.winnerSlot; o.reveal = m.reveal;
+    o.voters = m.voters || null; o.byLot = !!m.byLot;
+  }
   return o;
 }
 function publicState(vid) {
   const voted = Object.keys(S.votes).filter((c) => Object.keys(S.votes[c]).length > 0).length;
   const out = {
     now: Date.now(),
+    cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS },
     t: S.t,
     matches: matchList().map(pubMatch),
-    stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted },
+    stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
     log: S.log.slice(-100).reverse(),
     me: null
   };
   if (vid) {
-    const e = S.entrants[vid];
+    const e = S.entrants[vid], c = codeOf(vid);
     out.me = {
+      name: c && c.name || null,
       entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link, matchId: e.matchId || null, slot: e.slot || null } : null,
       votes: S.votes[vid] || {}
     };
@@ -208,12 +249,6 @@ function needTournament(status) {
   if (!S.t) fail(409, 'Aucun tournoi n\'a été créé.');
   if (status && S.t.status !== status) fail(409, 'Cette action n\'est pas possible à ce stade du tournoi.');
 }
-function minutesOf(body) {
-  const m = Number(body && body.minutes);
-  if (!(m >= 0.05 && m <= 10080)) fail(400, 'Durée invalide.');
-  return m;
-}
-
 const routes = {
   'POST /api/redeem': (req, res, body) => {
     const ip = 'code:' + clientIp(req);
@@ -221,8 +256,27 @@ const routes = {
     const code = normCode(body.code);
     const c = S.codes.find((x) => x.code === code);
     if (!c) { hit(ip); fail(401, 'Code inconnu. Vérifie-le ou demande-en un à l\'organisateur.'); }
-    if (!c.usedAt) { c.usedAt = Date.now(); save(); }
+    if (!c.name) {
+      const name = cleanName(body.name);
+      if (name.length < 2) fail(400, 'Choisis un pseudo de 2 caractères au minimum.');
+      if (nameTaken(name)) fail(409, 'Ce pseudo est déjà pris, choisis-en un autre.');
+      c.name = name;
+    }
+    if (!c.usedAt) c.usedAt = Date.now();
+    save();
     setCookie(req, res, 'v', mk(c.id), 90 * 24 * 3600);
+    return { ok: true };
+  },
+  'POST /api/name': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid) fail(401, 'Entre ton code d\'invitation d\'abord.');
+    const c = codeOf(vid);
+    if (c.name) fail(409, 'Ton pseudo est déjà choisi.');
+    const name = cleanName(body.name);
+    if (name.length < 2) fail(400, 'Choisis un pseudo de 2 caractères au minimum.');
+    if (nameTaken(name)) fail(409, 'Ce pseudo est déjà pris, choisis-en un autre.');
+    c.name = name;
+    save();
     return { ok: true };
   },
   'POST /api/logout': (req, res) => { setCookie(req, res, 'v', '', 0); return { ok: true }; },
@@ -242,6 +296,7 @@ const routes = {
   'POST /api/vote': (req, res, body) => {
     const vid = voterId(req);
     if (!vid) fail(401, 'Entre ton code d\'invitation pour voter.');
+    if (!codeOf(vid).name) fail(403, 'Choisis d\'abord ton pseudo.');
     const m = S.matches[String(body.matchId)];
     if (!m || m.bye) fail(404, 'Duel introuvable.');
     if (m.status !== 'ouvert' || Date.now() >= m.closesAt) fail(409, 'Le vote de ce duel est fermé.');
@@ -300,23 +355,15 @@ const routes = {
   },
   'POST /api/admin/open': (req, res, body) => {
     needTournament('en_cours');
-    const min = minutesOf(body);
-    const pend = currentMatches().filter((m) => m.status === 'attente');
+    let pend = currentMatches().filter((m) => m.status === 'attente');
+    if (body.matchId) pend = pend.filter((m) => m.id === String(body.matchId));
     if (!pend.length) fail(409, 'Aucun duel à ouvrir.');
-    const now = Date.now(), end = now + min * 60000;
-    pend.forEach((m) => { m.status = 'ouvert'; m.opensAt = now; m.closesAt = end; });
-    logIt('Tour ' + S.t.round + ' : votes ouverts pour ' + pend.length + ' duel' + (pend.length > 1 ? 's' : '') + ', durée ' + durLabel(min) + ', fin le ' + frDate(end) + '. Clôture automatique.');
-    save();
-    return { ok: true };
-  },
-  'POST /api/admin/extend': (req, res, body) => {
-    needTournament('en_cours');
-    const min = minutesOf(body);
-    const tie = currentMatches().filter((m) => m.status === 'egalite');
-    if (!tie.length) fail(409, 'Aucun duel à égalité.');
-    const end = Date.now() + min * 60000;
-    tie.forEach((m) => { m.status = 'ouvert'; m.closesAt = end; m.tally = null; m.extensions = (m.extensions || 0) + 1; });
-    logIt('Tour ' + S.t.round + ' : vote prolongé pour ' + tie.length + ' duel' + (tie.length > 1 ? 's' : '') + ' à égalité, ' + durLabel(min) + ', fin le ' + frDate(end) + '.');
+    const live = body.live === true;
+    const now = Date.now(), end = now + VOTE_MINUTES * 60000;
+    pend.forEach((m) => { m.status = 'ouvert'; m.opensAt = now; m.closesAt = end; m.live = live; m.extensions = 0; });
+    const what = pend.length === 1 ? 'le duel ' + pend[0].idx : pend.length + ' duels';
+    logIt('Tour ' + S.t.round + ' : vote ouvert pour ' + what + ', ' + durLabel(VOTE_MINUTES) + ', fin à ' + frDate(end) +
+      '. Score en direct : ' + (live ? 'affiché' : 'caché jusqu\'à la clôture') + '. Égalité : +' + durLabel(EXTEND_MINUTES) + ' automatiques.');
     save();
     return { ok: true };
   },
@@ -342,7 +389,7 @@ const routes = {
   'POST /api/admin/reset': (req, res, body) => {
     if (body.confirm !== 'NOUVEAU') fail(400, 'Tape NOUVEAU pour confirmer.');
     fs.writeFileSync(path.join(DATA_DIR, 'archive-' + Date.now() + '.json'), JSON.stringify(S));
-    const codes = S.codes.map((c) => ({ id: c.id, code: c.code, createdAt: c.createdAt, usedAt: c.usedAt }));
+    const codes = S.codes.map((c) => Object.assign({}, c));
     S = emptyState();
     S.codes = codes;
     logIt('Nouveau tournoi : les inscriptions, duels et votes précédents ont été archivés. Les codes d\'invitation sont conservés.');
@@ -377,7 +424,7 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 function serveStatic(req, res, pathname) {
-  let p = pathname === '/' ? '/index.html' : pathname === '/admin' ? '/admin.html' : pathname;
+  let p = pathname === '/' ? '/index.html' : pathname === '/admin' ? '/admin.html' : pathname === '/stats' ? '/stats.html' : pathname;
   const file = path.normalize(path.join(PUBLIC_DIR, p));
   if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(404, SEC); return res.end('Introuvable'); }
   fs.readFile(file, (err, data) => {

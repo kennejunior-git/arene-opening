@@ -11,7 +11,10 @@
 <body>
 <main>
   <header class="top">
-    <p class="eyebrow">Tournoi d'openings · duels en binôme</p>
+    <div class="topbar">
+      <p class="eyebrow">Tournoi d'openings · duels en binôme</p>
+      <a href="/stats" class="chip">Statistiques</a>
+    </div>
     <h1 id="ttl">Arène des Openings</h1>
     <div class="stats" id="stats"></div>
   </header>
@@ -27,8 +30,10 @@
     <ul class="rules">
       <li><strong>Un code, un vote par duel.</strong> Chaque membre reçoit un code d'invitation personnel à usage unique. Tu peux changer ton choix jusqu'à la fin du duel.</li>
       <li><strong>Anonymat.</strong> Les openings sont présentés sans le nom de leur auteur. Les noms apparaissent quand le duel est terminé.</li>
-      <li><strong>Scores cachés.</strong> Personne ne voit les résultats avant la clôture, pour que le score n'influence pas les votes.</li>
-      <li><strong>Clôture automatique.</strong> À l'heure annoncée, le serveur compte les voix et publie le résultat. L'organisateur ne peut ni voter, ni modifier un vote, ni choisir un gagnant. Celui qui a le plus de voix gagne.</li>
+      <li><strong>Scores cachés.</strong> Sauf si l'organisateur active le score en direct pour un duel (c'est écrit dans le journal), personne ne voit le score avant la clôture.</li>
+      <li><strong>Durée et clôture automatique.</strong> Un duel dure <span data-cfg="voteMinutes">15 minutes</span>. À l'heure, le serveur compte les voix et publie le résultat. L'organisateur ne peut ni voter, ni modifier un vote, ni choisir un gagnant. Celui qui a le plus de voix gagne.</li>
+      <li><strong>Égalité.</strong> Si les deux openings ont autant de voix, <span data-cfg="extendMinutes">5 minutes</span> s'ajoutent automatiquement, autant de fois que nécessaire. Si l'égalité dure encore après plusieurs prolongations, le serveur tire le gagnant au sort et l'écrit dans le journal.</li>
+      <li><strong>Pseudos des votants.</strong> Quand un duel est terminé, la liste des pseudos des votants de chaque côté est affichée. Pendant le vote, on voit seulement le nombre de votes, jamais qui a voté.</li>
       <li><strong>Pas de campagne.</strong> Demander des votes pour soi est interdit. Les participants ne votent pas dans leur propre duel.</li>
     </ul>
   </section>

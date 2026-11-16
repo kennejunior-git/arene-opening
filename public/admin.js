@@ -6,9 +6,8 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  var DURS = [[10, '10 minutes (essai)'], [720, '12 heures'], [1440, '24 heures'], [2880, '48 heures'], [4320, '72 heures']];
-  var A = null, authed = false, busy = false, err = '', info = '', armed = null, dur = 1440, lastKey = '', lastExp = -1;
-  var draft = { password: '', tname: '', count: '20', confirm: '' };
+  var A = null, authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
+  var draft = { password: '', tname: '', count: '20', confirm: '', live: false };
 
   function fmtDate(ms) {
     return new Date(ms).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -24,20 +23,22 @@
     if (!r.ok) { var er = new Error(j.error || 'Erreur'); er.status = r.status; throw er; }
     return j;
   }
-  function durSelect() {
-    return '<select id="dur" aria-label="Durée du vote">' + DURS.map(function (d) {
-      return '<option value="' + d[0] + '"' + (d[0] === dur ? ' selected' : '') + '>' + d[1] + '</option>';
-    }).join('') + '</select>';
+  function fmtMin(m) { return m >= 60 && m % 60 === 0 ? (m / 60) + ' h' : m + ' min'; }
+  function fmtLeft(ms) {
+    var m = Math.max(1, Math.ceil(ms / 60000)), h = Math.floor(m / 60), mm = m % 60;
+    return h ? h + ' h ' + String(mm).padStart(2, '0') + ' min' : mm + ' min';
   }
+  function nowMs() { return Date.now() + (A ? A.now - fetchedAt : 0); }
+  var fetchedAt = Date.now();
 
   async function load() {
-    try { A = await api('/api/admin/state'); authed = true; }
+    try { A = await api('/api/admin/state'); fetchedAt = Date.now(); authed = true; }
     catch (e) { if (e.status === 401) { authed = false; A = null; } else { err = 'Impossible de joindre le serveur.'; } }
     render(true);
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt]; }), busy, err, info, armed, dur]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
@@ -92,21 +93,28 @@
     } else if (A.t.status === 'en_cours') {
       var cur = A.matches.filter(function (m) { return m.round === A.t.round; });
       var pend = cur.filter(function (m) { return m.status === 'attente'; });
-      var open = cur.filter(function (m) { return m.status === 'ouvert'; });
-      var tie = cur.filter(function (m) { return m.status === 'egalite'; });
       var allClosed = cur.length > 0 && cur.every(function (m) { return m.status === 'clos'; });
-      h += '<p class="note">Tour ' + A.t.round + ' sur ' + A.t.roundsTotal + ' · ' + cur.length + ' duel' + (cur.length > 1 ? 's' : '') + '.</p>';
+      var vm = A.cfg.voteMinutes, em = A.cfg.extendMinutes;
+      h += '<p class="note">Tour ' + A.t.round + ' sur ' + A.t.roundsTotal + ' · ' + cur.length + ' duel' + (cur.length > 1 ? 's' : '') + '. Chaque vote dure ' + fmtMin(vm) +
+        '. En cas d\'égalité, ' + fmtMin(em) + ' sont ajoutées automatiquement (jusqu\'à ' + A.cfg.maxExtensions + ' fois, puis le serveur tire au sort). La clôture se fait toute seule.</p>';
+      h += '<ul class="dlist">' + cur.map(function (m) {
+        var info = '', btn = '';
+        if (m.bye) info = '<span class="chip ok">Qualifié d\'office</span>';
+        else if (m.status === 'attente') {
+          info = '<span class="chip">En attente</span>';
+          btn = '<button class="btn small primary" data-act="open" data-m="' + esc(m.id) + '"' + dis + '>Ouvrir (' + fmtMin(vm) + ')</button>';
+        } else if (m.status === 'ouvert') {
+          info = '<span class="chip ok">Vote ouvert</span> <span class="note">' + m.votes + ' vote' + (m.votes > 1 ? 's' : '') + ' · fin dans <span data-closes="' + m.closesAt + '">' + fmtLeft(m.closesAt - nowMs()) + '</span>' +
+            (m.extensions ? ' · prolongation ' + m.extensions : '') + (m.live ? ' · score en direct' : '') + '</span>';
+        } else {
+          info = '<span class="chip">Terminé</span> <span class="note">' + (m.tally ? m.tally.a + ' – ' + m.tally.b : '') + (m.byLot ? ' · tirage au sort' : '') + '</span>';
+        }
+        return '<li><div class="info"><strong>Duel ' + m.idx + '</strong><span>' + info + '</span></div>' + btn + '</li>';
+      }).join('') + '</ul>';
       if (pend.length) {
-        h += '<div class="block"><p><strong>' + pend.length + ' duel' + (pend.length > 1 ? 's' : '') + '</strong> prêt' + (pend.length > 1 ? 's' : '') + ' à ouvrir.</p>' +
-          '<div class="row">' + durSelect() + '<button class="btn primary" data-act="open"' + dis + '>Ouvrir les votes</button></div></div>';
-      }
-      if (open.length) {
-        var last = Math.max.apply(null, open.map(function (m) { return m.closesAt; }));
-        h += '<div class="block"><p class="note">Votes ouverts. Clôture <strong>automatique</strong> le ' + esc(fmtDate(last)) + ' : le serveur compte les voix et publie les scores sans toi.</p></div>';
-      }
-      if (tie.length) {
-        h += '<div class="block"><p><strong>' + tie.length + ' duel' + (tie.length > 1 ? 's' : '') + ' à égalité.</strong> Prolonge le vote pour les départager.</p>' +
-          '<div class="row">' + durSelect() + '<button class="btn primary" data-act="extend"' + dis + '>Prolonger le vote</button></div></div>';
+        h += '<div class="block"><label class="check" for="live"><input id="live" type="checkbox"' + (draft.live ? ' checked' : '') + '> Afficher le score en direct pendant le vote</label>' +
+          '<p class="hint">Décoché : le score reste caché jusqu\'à la clôture. Le choix est écrit dans le journal public et ne peut plus être changé une fois le duel ouvert.</p>' +
+          (pend.length > 1 ? '<button class="btn primary" data-act="openall"' + dis + '>Ouvrir tous les duels en attente (' + pend.length + ')</button>' : '') + '</div>';
       }
       if (allClosed) {
         h += '<div class="block"><p>Tous les duels du tour sont terminés.</p><button class="btn primary" data-act="next"' + dis + '>' +
@@ -134,7 +142,7 @@
     busy = true; err = ''; info = ''; render();
     try { await fn(); info = okMsg || ''; } catch (e) { err = e.message || 'Action impossible.'; if (e.status === 401) authed = false; }
     busy = false; armed = null;
-    try { A = await api('/api/admin/state'); } catch (e) { /* ignoré */ }
+    try { A = await api('/api/admin/state'); fetchedAt = Date.now(); } catch (e) { /* ignoré */ }
     render();
   }
 
@@ -148,7 +156,7 @@
     else if (id === 'confirm') draft.confirm = e.target.value;
   });
   document.addEventListener('change', function (e) {
-    if (e.target.id === 'dur') { dur = Number(e.target.value) || 1440; render(); }
+    if (e.target.id === 'live') draft.live = e.target.checked;
   });
   document.addEventListener('click', async function (e) {
     var b = e.target.closest('button');
@@ -167,8 +175,8 @@
     } else if (a === 'draw') {
       if (armed !== 'draw') { armed = 'draw'; render(); setTimeout(function () { if (armed === 'draw') { armed = null; render(); } }, 6000); }
       else run(function () { return api('/api/admin/draw', {}); }, 'Tirage au sort effectué.');
-    } else if (a === 'open') run(function () { return api('/api/admin/open', { minutes: dur }); }, 'Votes ouverts.');
-    else if (a === 'extend') run(function () { return api('/api/admin/extend', { minutes: dur }); }, 'Vote prolongé.');
+    } else if (a === 'open') { var mid = b.getAttribute('data-m'); run(function () { return api('/api/admin/open', { matchId: mid, live: draft.live }); }, 'Vote ouvert.'); }
+    else if (a === 'openall') run(function () { return api('/api/admin/open', { live: draft.live }); }, 'Votes ouverts.');
     else if (a === 'next') run(function () { return api('/api/admin/next', {}); }, 'Tour suivant prêt.');
   });
   document.addEventListener('submit', async function (e) {
@@ -184,6 +192,15 @@
   });
 
   setInterval(function () { if (authed && !busy) load(); }, 10000);
+  setInterval(function () {
+    if (!A) return;
+    document.querySelectorAll('[data-closes]').forEach(function (sp) {
+      var left = Number(sp.getAttribute('data-closes')) - nowMs();
+      if (left > 0) sp.textContent = fmtLeft(left);
+    });
+    var c = A.matches.filter(function (m) { return m.status === 'ouvert' && nowMs() >= m.closesAt; }).length;
+    if (c !== lastExp) { lastExp = c; if (c && authed && !busy) load(); }
+  }, 1000);
   render(true);
   load();
 })();

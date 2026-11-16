@@ -9,7 +9,7 @@
 
   var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '';
   var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1;
-  var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', egalite: 'Égalité', clos: 'Terminé' };
+  var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', clos: 'Terminé' };
 
   function now() { return Date.now() + offset; }
   function safeUrl(u) {
@@ -73,7 +73,8 @@
       var st = { inscription: 'Inscriptions ouvertes', en_cours: 'Tournoi en cours', termine: 'Terminé' }[t.status] || '';
       h += '<span class="chip ' + (t.status === 'en_cours' ? 'ok' : '') + '">' + st + '</span>';
       if (t.status === 'en_cours') h += '<span class="chip">Tour ' + t.round + ' sur ' + t.roundsTotal + '</span>';
-      if (t.entrantCount) h += '<span class="chip">' + t.entrantCount + ' participants</span>';
+      var ne = t.entrantCount || (S.stats && S.stats.entrants) || 0;
+      h += '<span class="chip">' + ne + ' opening' + (ne > 1 ? 's' : '') + ' inscrit' + (ne > 1 ? 's' : '') + '</span>';
     }
     if (S && S.stats.codes) h += '<span class="chip">' + S.stats.codes + ' codes émis · ' + S.stats.voted + ' ont voté</span>';
     $('stats').innerHTML = h;
@@ -90,20 +91,30 @@
   function renderLogin() {
     var el = $('login');
     if (!S || !S.t) { el.hidden = true; return; }
-    var key = JSON.stringify([!!S.me, loginErr]);
+    var key = JSON.stringify([!!S.me, S.me && S.me.name, loginErr]);
     if (key === lastLoginKey) return;
     lastLoginKey = key;
     el.hidden = false;
-    if (S.me) {
-      el.innerHTML = '<div class="row"><p class="note">Tu es connecté avec ton code d\'invitation.</p><button class="btn small" id="logoutBtn" type="button">Changer de code</button></div>';
+    var pseudoHint = 'Ton pseudo sera affiché avec ton choix quand le duel est terminé. Il est choisi une seule fois, à ta première connexion avec ce code.';
+    if (S.me && S.me.name) {
+      el.innerHTML = '<div class="row"><p class="note">Connecté : <strong>' + esc(S.me.name) + '</strong></p><button class="btn small" id="logoutBtn" type="button">Changer de code</button></div>';
+    } else if (S.me) {
+      el.innerHTML = '<h2>Choisis ton pseudo</h2><p class="lead">' + esc(pseudoHint) + '</p>' +
+        '<form id="nameForm" class="stack"><label for="vname">Ton pseudo</label>' +
+        '<input id="vname" name="name" maxlength="30" minlength="2" autocomplete="off" required>' +
+        '<button class="btn primary" type="submit">Valider mon pseudo</button>' + (loginErr ? '<p class="err">' + esc(loginErr) + '</p>' : '') + '</form>';
     } else {
       el.innerHTML = '<h2>Entre ton code</h2><p class="lead">Pour voter ou t\'inscrire, utilise ton code d\'invitation personnel. Tu peux suivre les duels sans code. Pas de code ? Demande-le à l\'organisateur.</p>' +
         '<form id="loginForm" class="stack"><label for="code">Code d\'invitation</label>' +
         '<input id="code" class="codefield" name="code" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required>' +
+        '<label for="pseudo">Ton pseudo (première connexion seulement)</label>' +
+        '<input id="pseudo" name="pseudo" maxlength="30" autocomplete="off">' +
+        '<p class="hint">' + esc(pseudoHint) + '</p>' +
         '<button class="btn primary" type="submit">Entrer</button>' + (loginErr ? '<p class="err">' + esc(loginErr) + '</p>' : '') + '</form>';
     }
   }
 
+  
   function renderReg() {
     var el = $('reg');
     if (!S || !S.t || !S.me) { el.hidden = true; lastRegKey = ''; return; }
@@ -142,29 +153,37 @@
   }
 
   function eligible(m) {
-    return !!(S.me && m.status === 'ouvert' && now() < m.closesAt && !(S.me.entry && S.me.entry.matchId === m.id));
+    return !!(S.me && S.me.name && m.status === 'ouvert' && now() < m.closesAt && !(S.me.entry && S.me.entry.matchId === m.id));
   }
 
   function optHTML(side, pos, m, mode) {
     var u = safeUrl(side.link), picked = S.me && S.me.votes[m.id] === side.slot;
     var mine = !!(S.me && S.me.entry && S.me.entry.slot === side.slot);
+    var isA = side.slot === m.a.slot;
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(side.title) + '</p><p class="oanime">' + esc(side.anime) + '</p>' +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Écouter sur ' + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p></div>';
     if (mode === 'vote') {
+      if (m.liveTally) {
+        var lt = m.liveTally, lt_total = lt.a + lt.b, ln = isA ? lt.a : lt.b, lp = lt_total ? Math.round(100 * ln / lt_total) : 0;
+        h += '<div class="res"><div class="track"><div class="fill" style="width:' + lp + '%"></div></div>' +
+          '<p class="nums"><span>' + ln + ' voix en direct</span><span>' + lp + ' %</span></p></div>';
+      }
       var can = eligible(m);
       h += '<button class="vote" data-m="' + esc(m.id) + '" data-s="' + esc(side.slot) + '" aria-pressed="' + (picked ? 'true' : 'false') + '"' +
         (can && !voting ? '' : ' disabled') + ' aria-label="Voter pour l\'opening ' + pos + '">' + (picked ? 'Ton vote ✓' : 'Voter pour celui-ci') + '</button>';
     } else if (mode === 'result') {
       var tl = m.tally || { a: 0, b: 0, total: 0 };
-      var n = side.slot === m.a.slot ? tl.a : tl.b, pct = tl.total ? Math.round(100 * n / tl.total) : 0;
+      var n = isA ? tl.a : tl.b, pct = tl.total ? Math.round(100 * n / tl.total) : 0;
       var won = m.winnerSlot === side.slot;
-      var nm = m.reveal ? (side.slot === m.a.slot ? m.reveal.a : m.reveal.b) : null;
+      var nm = m.reveal ? (isA ? m.reveal.a : m.reveal.b) : null;
+      var vn = m.voters ? (isA ? m.voters.a : m.voters.b) : null;
       h += '<div class="res">' + (nm ? '<p class="oanime">Présenté par <strong>' + esc(nm) + '</strong>' + (won ? ' <span class="chip ok">Qualifié</span>' : '') + '</p>' : '') +
         '<div class="track"><div class="fill" style="width:' + pct + '%"></div></div>' +
-        '<p class="nums"><span>' + n + ' voix</span><span>' + pct + ' %</span></p></div>';
+        '<p class="nums"><span>' + n + ' voix</span><span>' + pct + ' %</span></p>' +
+        (vn && vn.length ? '<details class="voters"><summary>Voir les ' + vn.length + ' votant' + (vn.length > 1 ? 's' : '') + '</summary><p>' + vn.map(esc).join(', ') + '</p></details>' : '') + '</div>';
     }
     return h + '</div>';
   }
@@ -176,25 +195,32 @@
         '<p class="note">Nombre impair de participants : <strong>' + esc(m.reveal && m.reveal.a) + '</strong> passe directement au tour suivant.</p></article>';
     }
     var live = m.status === 'ouvert' && t < m.closesAt;
-    var chipCls = live ? 'ok' : (m.status === 'egalite' ? 'warn' : '');
+    var chipCls = live ? 'ok' : '';
     var chipTxt = m.status === 'ouvert' && !live ? 'Calcul en cours' : STATUS[m.status];
     var h = '<article class="duel"><div class="dhead"><h3>Duel ' + m.idx + '</h3><span class="chip ' + chipCls + '">' + chipTxt + '</span></div>';
     if (m.status === 'ouvert') {
       h += '<p class="timer">' + (live ? 'Se termine dans <span data-closes="' + m.closesAt + '">' + fmtLeft(m.closesAt - t) + '</span> · ' + esc(fmtDate(m.closesAt))
         : 'Le vote est terminé, le résultat arrive.') + '</p>';
+      var pctT = m.eligible ? Math.min(100, Math.round(100 * m.votes / m.eligible)) : 0;
+      h += '<div class="turnout"><div class="track"><div class="fill" style="width:' + pctT + '%"></div></div>' +
+        '<p class="nums"><span>' + m.votes + ' vote' + (m.votes > 1 ? 's' : '') + ' enregistré' + (m.votes > 1 ? 's' : '') + '</span><span>sur ' + m.eligible + ' codes émis</span></p></div>';
+      if (m.extensions) h += '<p class="note"><span class="chip warn">Prolongation ' + m.extensions + '</span> Égalité : ' + (S.cfg ? S.cfg.extendMinutes : 5) + ' minutes ajoutées. Ton vote peut départager les deux openings.</p>';
+      if (!m.liveTally) h += '<p class="note">Le score est caché jusqu\'à la fin du duel.</p>';
     }
-    var mode = (m.status === 'clos' || m.status === 'egalite') ? 'result' : (m.status === 'ouvert' ? 'vote' : 'plain');
+    var mode = m.status === 'clos' ? 'result' : (m.status === 'ouvert' ? 'vote' : 'plain');
     var order = [m.a, m.b];
     if (mode !== 'result' && flip(m.id)) order = [m.b, m.a];
     h += optHTML(order[0], 1, m, mode) + '<div class="vs" aria-hidden="true">VS</div>' + optHTML(order[1], 2, m, mode);
-    if (m.status === 'egalite') h += '<p class="note">Égalité parfaite. L\'organisateur doit prolonger le vote pour départager les deux openings.</p>';
     if (m.status === 'clos' && m.tally) {
       h += '<p class="note">' + m.tally.total + ' vote' + (m.tally.total > 1 ? 's' : '') + ' compté' + (m.tally.total > 1 ? 's' : '') +
-        (m.tally.ignored ? ', ' + m.tally.ignored + ' écarté' + (m.tally.ignored > 1 ? 's' : '') + ' (participants du duel)' : '') + '.</p>';
+        (m.tally.ignored ? ', ' + m.tally.ignored + ' écarté' + (m.tally.ignored > 1 ? 's' : '') + ' (participants du duel)' : '') +
+        (m.extensions ? ' · ' + m.extensions + ' prolongation' + (m.extensions > 1 ? 's' : '') : '') + '.</p>';
+      if (m.byLot) h += '<p class="note"><span class="chip warn">Tirage au sort</span> Égalité persistante : le serveur a tiré le gagnant au hasard.</p>';
     }
     if (live && S.me && S.me.votes[m.id]) h += '<p class="okmsg">Ton vote est enregistré. Tu peux le changer jusqu\'à la fin du duel.</p>';
     if (live && S.me && S.me.entry && S.me.entry.matchId === m.id) h += '<p class="note">C\'est ton duel : tu ne votes pas ici.</p>';
     if (live && !S.me) h += '<p class="note">Entre ton code d\'invitation en haut de la page pour voter.</p>';
+    if (live && S.me && !S.me.name) h += '<p class="note">Choisis ton pseudo en haut de la page pour voter.</p>';
     return h + '</article>';
   }
 
@@ -223,7 +249,14 @@
     }).join('') : '<li><span class="note">Aucune action pour l\'instant. Elles apparaîtront ici dès que l\'organisateur agira.</span></li>';
   }
 
-  function renderAll() { renderHead(); renderNotice(); renderLogin(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
+  function renderRules() {
+    if (!S || !S.cfg) return;
+    document.querySelectorAll('[data-cfg]').forEach(function (e) {
+      var v = S.cfg[e.getAttribute('data-cfg')];
+      e.textContent = v >= 60 && v % 60 === 0 ? (v / 60) + ' h' : v + ' minutes';
+    });
+  }
+  function renderAll() { renderRules(); renderHead(); renderNotice(); renderLogin(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
@@ -248,8 +281,14 @@
     var f = e.target;
     if (f.id === 'loginForm') {
       loginErr = '';
-      try { await api('/api/redeem', { code: f.elements.code.value }); lastLoginKey = ''; }
+      try { await api('/api/redeem', { code: f.elements.code.value, name: f.elements.pseudo.value }); lastLoginKey = ''; }
       catch (er) { loginErr = er.message; lastLoginKey = ''; }
+      await load();
+    } else if (f.id === 'nameForm') {
+      loginErr = '';
+      try { await api('/api/name', { name: f.elements.name.value }); }
+      catch (er) { loginErr = er.message; }
+      lastLoginKey = '';
       await load();
     } else if (f.id === 'regForm') {
       regMsg = ''; regErr = '';
