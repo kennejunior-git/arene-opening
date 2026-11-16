@@ -287,6 +287,7 @@
     // Keep the real audio elements alive during refreshes. Recreating them
     // interrupts playback on mobile browsers even if currentTime is restored.
     var existingAudio = Array.prototype.slice.call(el.querySelectorAll('audio'));
+    var existingVideo = Array.prototype.slice.call(el.querySelectorAll('video'));
     if (!S || !S.t) { el.innerHTML = ''; return; }
     if (S.t.status === 'inscription') {
       el.innerHTML = '<h2>Duels</h2><p class="lead">Les duels apparaîtront ici après le tirage au sort, avec les deux openings face à face.</p>';
@@ -307,9 +308,12 @@
     Array.prototype.forEach.call(el.querySelectorAll('audio'), function (fresh) {
       var src = fresh.getAttribute('src');
       var index = existingAudio.findIndex(function (a) { return a.getAttribute('src') === src; });
-      if (index !== -1) {
-        fresh.parentNode.replaceChild(existingAudio.splice(index, 1)[0], fresh);
-      }
+      if (index !== -1) fresh.parentNode.replaceChild(existingAudio.splice(index, 1)[0], fresh);
+    });
+    Array.prototype.forEach.call(el.querySelectorAll('video'), function (fresh) {
+      var src = fresh.getAttribute('src');
+      var index = existingVideo.findIndex(function (v) { return v.getAttribute('src') === src; });
+      if (index !== -1) fresh.parentNode.replaceChild(existingVideo.splice(index, 1)[0], fresh);
     });
   }
 
