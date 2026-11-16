@@ -6,7 +6,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  var A = null, authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
+  var A = null, storage = { archives: [] }, storageErr = '', authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
   var draft = { password: '', tname: '', count: '20', confirm: '', live: false };
 
   function fmtDate(ms) {
@@ -32,13 +32,13 @@
   var fetchedAt = Date.now();
 
   async function load() {
-    try { A = await api('/api/admin/state'); fetchedAt = Date.now(); authed = true; }
+    try { A = await api('/api/admin/state'); storage = await api('/api/admin/storage'); storageErr = ''; fetchedAt = Date.now(); authed = true; }
     catch (e) { if (e.status === 401) { authed = false; A = null; } else { err = 'Impossible de joindre le serveur.'; } }
     render(true);
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
@@ -144,6 +144,25 @@
     } else h += '<p class="note">Aucun bonus attribué.</p>';
     h += '</section>';
 
+    /* nettoyage des archives audio */
+    h += '<section class="panel"><h2>Libérer le stockage audio</h2><p class="lead">Supprime uniquement les audios des tournois archivés sélectionnés. Les résultats, les votes, les vainqueurs et les statistiques restent conservés. Les fichiers utilisés par le tournoi actif ou une autre archive sont protégés.</p>';
+    if (storageErr) h += '<p class="err">' + esc(storageErr) + '</p>';
+    var archives = storage && storage.archives ? storage.archives : [];
+    if (!archives.length) h += '<p class="note">Aucun tournoi archivé pour le moment.</p>';
+    archives.forEach(function (ar) {
+      var size = ar.bytes < 1048576 ? Math.round(ar.bytes / 1024) + ' Ko' : (ar.bytes / 1048576).toFixed(1) + ' Mo';
+      h += '<div class="block"><p><strong>' + esc(ar.name) + '</strong> <span class="chip">Archive #' + ar.id + '</span></p>' +
+        '<p class="note">' + ar.audioCount + ' audio(s) référencé(s) · ' + ar.deletableCount + ' supprimable(s) · ' + ar.sharedCount + ' partagé(s) protégé(s) · environ ' + size + ' libérables' +
+        (ar.pendingCount ? ' · ' + ar.pendingCount + ' suppression(s) à reprendre' : '') + '</p>';
+      if (ar.deletableCount || ar.pendingCount) {
+        h += '<form class="stack storageForm"><input type="hidden" name="archiveId" value="' + ar.id + '"><label for="storageConfirm' + ar.id + '">Pour confirmer, tape SUPPRIMER AUDIO</label>' +
+          '<input id="storageConfirm' + ar.id + '" name="confirm" autocomplete="off" placeholder="SUPPRIMER AUDIO" required>' +
+          '<button class="btn small" type="submit"' + dis + '>Supprimer les audios de cette archive</button></form>';
+      }
+      h += '</div>';
+    });
+    h += '</section>';
+
     /* nouveau tournoi */
     if (A.t) {
       h += '<section class="panel"><h2>Nouveau tournoi</h2><p class="lead">Archive le tournoi actuel (inscriptions, duels, votes) et repart de zéro. Les codes d\'invitation sont conservés : les membres gardent le leur.</p>' +
@@ -158,7 +177,7 @@
     busy = true; err = ''; info = ''; render();
     try { await fn(); info = okMsg || ''; } catch (e) { err = e.message || 'Action impossible.'; if (e.status === 401) authed = false; }
     busy = false; armed = null;
-    try { A = await api('/api/admin/state'); fetchedAt = Date.now(); } catch (e) { /* ignoré */ }
+    try { A = await api('/api/admin/state'); storage = await api('/api/admin/storage'); storageErr = ''; fetchedAt = Date.now(); } catch (e) { storageErr = e.message || 'Stockage indisponible.'; }
     render();
   }
 
@@ -205,6 +224,8 @@
     } else if (f === 'createForm') run(function () { return api('/api/admin/create', { name: draft.tname }); }, 'Tournoi créé.');
     else if (f === 'codesForm') run(function () { return api('/api/admin/codes', { count: Number(draft.count) }); }, 'Codes générés.');
     else if (f === 'resetForm') run(function () { return api('/api/admin/reset', { confirm: draft.confirm }).then(function () { draft.confirm = ''; }); }, 'Nouveau tournoi prêt.');
+    else if (f === 'bonusForm') { var bf = new FormData(e.target); run(function () { return api('/api/admin/bonus', { playerId: bf.get('playerId'), points: Number(bf.get('points')), reason: bf.get('reason') }); }, 'Bonus enregistré et ajouté au journal.'); }
+    else if (f === 'storageForm') { var sf = new FormData(e.target); run(function () { return api('/api/admin/storage/cleanup', { archiveId: Number(sf.get('archiveId')), confirm: sf.get('confirm') }); }, 'Nettoyage terminé. Les résultats historiques sont conservés.'); }
   });
 
   setInterval(function () { if (authed && !busy) load(); }, 10000);
