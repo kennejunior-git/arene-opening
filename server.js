@@ -529,7 +529,7 @@ function scoreTournament(state, totals, entries, archived) {
   for (const [uid, entry] of Object.entries(state.entrants || {})) {
     if (!entries[uid]) entries[uid] = [];
     if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived && state.t.status === 'termine' ? 'archive' : (state.t.status || '') });
-    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
     totals[uid].tournaments.add(key);
   }
   for (const m of Object.values(state.matches || {})) {
@@ -538,10 +538,33 @@ function scoreTournament(state, totals, entries, archived) {
     if (!pair) continue;
     const uid = m.winnerSlot === m.a.slot ? pair.aUid : pair.bUid;
     if (!uid) continue;
-    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
     totals[uid].wins++;
     if (state === S) totals[uid].seasonWins++;
   }
+  // Un titre est attribué uniquement si le tournoi est terminé et si le gagnant de la finale est enregistré.
+  if (state.t.status === 'termine') {
+    const matches = Object.values(state.matches || {});
+    const finalRound = matches.reduce((n, m) => Math.max(n, Number(m && m.round) || 0), 0);
+    const finalMatch = matches.find((m) => m && Number(m.round) === finalRound && m.status === 'clos' && !m.bye && m.winnerSlot);
+    const pair = finalMatch && (state.pairings || {})[finalMatch.id];
+    if (finalMatch && pair) {
+      const championId = finalMatch.winnerSlot === finalMatch.a.slot ? pair.aUid : pair.bUid;
+      if (championId) {
+        if (!totals[championId]) totals[championId] = { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
+        totals[championId].championships = (totals[championId].championships || 0) + 1;
+      }
+    }
+  }
+}
+function playerBadges(p) {
+  const badges = [];
+  if (p.championships >= 1) badges.push({ id: 'champion', icon: '🏆', name: 'Champion', detail: 'A remporté un tournoi' });
+  if (p.championships >= 3) badges.push({ id: 'legend', icon: '👑', name: 'Légende', detail: '3 tournois remportés' });
+  if (p.wins >= 5) badges.push({ id: 'fighter', icon: '⚔️', name: 'Combattant', detail: '5 duels remportés' });
+  if (p.wins >= 10) badges.push({ id: 'master', icon: '🔥', name: 'Maître des duels', detail: '10 duels remportés' });
+  if (p.tournaments >= 3) badges.push({ id: 'veteran', icon: '🎖️', name: 'Vétéran', detail: '3 tournois disputés' });
+  return badges;
 }
 function audioKeys(state) {
   const keys = new Set();
@@ -591,13 +614,14 @@ async function communityData(playerId) {
   const bonusRows = Array.isArray(S.bonuses) ? S.bonuses : [];
   for (const code of S.codes) {
     if (!code.name) continue;
-    const t = totals[code.id] || { wins: 0, tournaments: new Set(), seasonWins: 0 };
+    const t = totals[code.id] || { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
     const allBonus = bonusRows.filter((b) => b.playerId === code.id).reduce((n, b) => n + Number(b.points || 0), 0);
     const seasonBonus = bonusRows.filter((b) => b.playerId === code.id && b.tournamentKey === key).reduce((n, b) => n + Number(b.points || 0), 0);
     players.push({
       id: code.id, name: code.name, wins: t.wins, seasonWins: t.seasonWins,
       bonus: allBonus, seasonBonus: seasonBonus, points: t.wins * 3 + allBonus,
-      seasonPoints: t.seasonWins * 3 + seasonBonus, tournaments: t.tournaments.size
+      seasonPoints: t.seasonWins * 3 + seasonBonus, tournaments: t.tournaments.size,
+      championships: t.championships || 0
     });
   }
   const sort = (a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name, 'fr');
@@ -608,7 +632,7 @@ async function communityData(playerId) {
     const p = players.find((x) => x.id === playerId);
     if (!p) return Object.assign(out, { profile: null });
     const history = (entries[playerId] || []).filter((e) => e.status === 'termine' || e.status === 'archive');
-    out.profile = Object.assign({}, p, { history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
+    out.profile = Object.assign({}, p, { badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
   }
   return out;
 }
