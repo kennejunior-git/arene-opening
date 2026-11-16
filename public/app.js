@@ -301,9 +301,10 @@
     var el = $('prizeAnnouncement');
     if (!el) return;
     var cfg = S && S.t && S.t.prizeConfig;
-    if (!cfg || !cfg.enabled) { el.hidden = true; return; }
+    if (!cfg) { el.hidden = true; return; }
     el.hidden = false;
     var a = cfg.amounts || {};
+    if (!cfg.enabled) { el.innerHTML = '<h2>Récompenses du tournoi</h2><p class="lead">L’organisateur a confirmé qu’aucune récompense financière n’est prévue pour ce tournoi.</p>'; return; }
     el.innerHTML = '<h2>Récompenses du tournoi</h2><p class="lead">L’organisateur a annoncé des récompenses financières :</p><ul><li>1re place : <strong>' + Number(a.first || 0).toLocaleString('fr-FR') + ' FCFA</strong></li>' +
       (Number(a.second || 0) > 0 ? '<li>2e place : <strong>' + Number(a.second).toLocaleString('fr-FR') + ' FCFA</strong></li>' : '') +
       (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
