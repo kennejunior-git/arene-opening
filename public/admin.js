@@ -39,7 +39,7 @@
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
@@ -63,6 +63,34 @@
     } else {
       var st = { inscription: 'Inscriptions ouvertes', en_cours: 'En cours', termine: 'Terminé' }[A.t.status];
       h += '<p><strong>' + esc(A.t.name) + '</strong> <span class="chip ' + (A.t.status === 'en_cours' ? 'ok' : '') + '">' + st + '</span></p>';
+    }
+    if (A.t && A.t.status === 'inscription') {
+      var pc = A.prizeConfig || { enabled: false, amounts: {} }, pa = pc.amounts || {};
+      h += '<section class="panel"><h2>Récompenses financières</h2><p class="lead">Annonce avant le tirage si le tournoi est doté. Les montants sont en FCFA. Les paiements seront effectués manuellement après le tournoi.</p>' +
+        '<form id="prizeConfigForm" class="stack"><label class="check"><input type="checkbox" name="enabled"' + (pc.enabled ? ' checked' : '') + '> Ce tournoi comporte des récompenses</label>' +
+        '<label for="prizeFirst">1re place (FCFA)</label><input id="prizeFirst" name="first" type="number" min="0" step="1" value="' + Number(pa.first || 0) + '">' +
+        '<label for="prizeSecond">2e place (FCFA, 0 si aucune)</label><input id="prizeSecond" name="second" type="number" min="0" step="1" value="' + Number(pa.second || 0) + '">' +
+        '<label for="prizeThird">3e place (FCFA, 0 si aucune)</label><input id="prizeThird" name="third" type="number" min="0" step="1" value="' + Number(pa.third || 0) + '">' +
+        '<p class="hint">La 3e place sera déterminée par un duel entre les deux perdants des demi-finales.</p>' +
+        '<button class="btn primary" type="submit"' + dis + '>Enregistrer et annoncer les récompenses</button></form></section>';
+    } else if (A.t && A.t.prizeConfig && A.t.prizeConfig.enabled) {
+      var pc2 = A.t.prizeConfig.amounts || {};
+      h += '<section class="panel"><h2>Récompenses annoncées</h2><p>1re : ' + Number(pc2.first || 0).toLocaleString('fr-FR') + ' FCFA · 2e : ' + Number(pc2.second || 0).toLocaleString('fr-FR') + ' FCFA · 3e : ' + Number(pc2.third || 0).toLocaleString('fr-FR') + ' FCFA</p></section>';
+    }
+    if (A.t && A.t.status === 'termine' && A.prizePayouts && A.prizePayouts.length) {
+      h += '<section class="panel"><h2>Versement des récompenses</h2><p class="lead">Effectue le transfert manuellement sur MTN Mobile Money ou Orange Money, puis marque-le comme envoyé. Le joueur devra confirmer la réception.</p>';
+      h += A.prizePayouts.map(function (p) {
+        var player = (A.players || []).find(function (x) { return x.id === p.playerId; });
+        var mm = player && player.mobileMoney;
+        var status = { a_payer: 'À payer', envoye: 'Envoyé · confirmation attendue', recu: 'Réception confirmée', non_recu: 'Non reçu · à vérifier' }[p.status] || p.status;
+        return '<div class="block"><p><strong>' + p.place + (p.place === 1 ? 're' : 'e') + ' place · ' + esc(p.playerName) + ' · ' + Number(p.amount).toLocaleString('fr-FR') + ' FCFA</strong></p><p class="note">' + status + '</p>' +
+          (mm ? '<p>Coordonnées privées : <strong>' + esc(mm.provider === 'MTN' ? 'MTN Mobile Money' : 'Orange Money') + '</strong> · <strong>' + esc(mm.number) + '</strong></p>' : '<p class="err">Le joueur n’a pas encore enregistré de numéro Mobile Money.</p>') +
+          (p.status === 'a_payer' || p.status === 'non_recu' ? '<form class="stack prizePaymentForm"><input type="hidden" name="playerId" value="' + esc(p.playerId) + '"><label>Moyen utilisé</label><select name="method" required><option value="MTN">MTN Mobile Money</option><option value="ORANGE">Orange Money</option></select><label>Référence du transfert (facultatif)</label><input name="reference" maxlength="80"><button class="btn small primary" type="submit"' + (mm ? dis : ' disabled') + '>Marquer comme envoyé</button></form>' : '') +
+          (p.playerNote ? '<p class="note">Message du joueur : ' + esc(p.playerNote) + '</p>' : '') + '</div>';
+      }).join('');
+      h += '</section>';
+    } else if (A.t && A.t.status === 'termine' && A.t.prizeConfig && A.t.prizeConfig.enabled) {
+      h += '<section class="panel"><h2>Récompenses</h2><p class="note">Aucun paiement à effectuer pour le moment. Vérifie que les places 1 à 3 ont bien été déterminées.</p></section>';
     }
     h += '</section>';
 
@@ -100,6 +128,7 @@
         '. En cas d\'égalité, ' + fmtMin(em) + ' sont ajoutées automatiquement (jusqu\'à ' + A.cfg.maxExtensions + ' fois, puis le serveur tire au sort). La clôture se fait toute seule.</p>';
       h += '<ul class="dlist">' + cur.map(function (m) {
         var info = '', btn = '';
+        var matchTitle = m.round === A.t.thirdPlaceRound ? 'Duel pour la 3e place' : 'Duel ' + m.idx;
         if (m.bye) info = '<span class="chip ok">Qualifié d\'office</span>';
         else if (m.status === 'attente') {
           info = '<span class="chip">En attente</span>';
@@ -110,7 +139,7 @@
         } else {
           info = '<span class="chip">Terminé</span> <span class="note">' + (m.tally ? m.tally.a + ' – ' + m.tally.b : '') + (m.byLot ? ' · tirage au sort' : '') + '</span>';
         }
-        return '<li><div class="info"><strong>Duel ' + m.idx + '</strong><span>' + info + '</span></div>' + btn + '</li>';
+        return '<li><div class="info"><strong>' + matchTitle + '</strong><span>' + info + '</span></div>' + btn + '</li>';
       }).join('') + '</ul>';
       if (pend.length) {
         h += '<div class="block"><label class="check" for="live"><input id="live" type="checkbox"' + (draft.live ? ' checked' : '') + '> Afficher le score en direct pendant le vote</label>' +
