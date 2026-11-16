@@ -311,3 +311,7 @@ a { text-underline-offset:3px; }
 .comment-like.active { color:#ff9ab7; border-color:#87445e; background:#3b2036; }
 .comment-like:disabled { opacity:.55; cursor:wait; }
 .comment-like-count { cursor:default; }
+
+
+/* Réactions sous les openings */
+.opening-reactions{display:flex;flex-direction:column;gap:8px;margin-top:12px}.reaction-title{color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.reaction-list{display:flex;flex-wrap:wrap;gap:7px}.reaction-btn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:6px 10px;border:1px solid #34435f;border-radius:999px;background:#17233a;color:#d9e2f5;cursor:pointer;font:600 13px var(--mono)}.reaction-btn:hover:not(:disabled),.reaction-btn.active{border-color:#9878dc;background:#30274b;color:#fff}.reaction-btn.active{box-shadow:0 0 0 1px #9878dc inset}.reaction-btn:disabled{opacity:.72;cursor:default}.reaction-btn span{font-size:17px}.opening-reactions small{color:var(--muted);font-size:11px}
