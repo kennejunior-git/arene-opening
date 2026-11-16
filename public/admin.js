@@ -112,6 +112,7 @@
     activeVideos.forEach(function(v) {
       var size = v.size ? (v.size / 1048576).toFixed(1) + ' Mo' : 'Taille inconnue';
       h += '<div class="block"><p><strong>' + esc(v.playerName) + '</strong> · ' + esc(v.title || 'Vidéo sans titre') + '</p>' +
+        '<video class="media-video" controls preload="metadata" src="/video/' + encodeURIComponent(v.file) + '"></video>' +
         '<p class="note">' + esc(v.anime || '') + (v.order ? ' · ordre ' + v.order : '') + ' · ' + size + (v.duration ? ' · ' + Math.round(v.duration) + ' s' : '') + '</p>' +
         '<form class="stack videoModerationForm"><input type="hidden" name="file" value="' + esc(v.file) + '">' +
         '<label>Motif de suppression</label><input name="reason" maxlength="200" minlength="3" placeholder="Ex. contenu adulte contraire au règlement" required>' +
