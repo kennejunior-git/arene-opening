@@ -303,6 +303,8 @@ function handleVideoUpload(req, res, slot) {
       await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: file, Body: bytes, ContentType: 'video/mp4' }));
       S.videoUploads = S.videoUploads || {}; S.videoUploads[vid] = S.videoUploads[vid] || {};
       if (S.videoUploads[vid][slot]) unlinkVideo(S.videoUploads[vid][slot].file);
+      const oldEntryVideo = S.entrants[vid] && S.entrants[vid].videos && S.entrants[vid].videos[slot - 1];
+      if (oldEntryVideo && oldEntryVideo.file && (!S.videoUploads[vid][slot] || oldEntryVideo.file !== S.videoUploads[vid][slot].file)) unlinkVideo(oldEntryVideo.file);
       S.videoUploads[vid][slot] = { file, size, duration }; await save();
       sendJson(res, 200, { ok: true, file, duration });
     } catch (e) { console.error('Enregistrement vidéo:', e); if (!res.headersSent) sendJson(res, 500, { error: 'Impossible d’enregistrer la vidéo.' }); }
@@ -495,7 +497,7 @@ const routes = {
   'POST /api/admin/storage/cleanup': async (req, res, body) => {
     const id = Number(body.archiveId);
     if (!Number.isSafeInteger(id) || id < 1) fail(400, 'Archive invalide.');
-    if (body.confirm !== 'SUPPRIMER AUDIO') fail(400, 'Confirmation incorrecte.');
+    if (body.confirm !== 'SUPPRIMER MÉDIAS' && body.confirm !== 'SUPPRIMER AUDIO') fail(400, 'Confirmation incorrecte.');
     const q = await pool.query('SELECT id, state FROM tournament_archives WHERE id=$1', [id]);
     if (!q.rows.length) fail(404, 'Archive introuvable.');
     const state = q.rows[0].state;
@@ -505,7 +507,7 @@ const routes = {
     all.rows.forEach((r) => { if (r.id !== id) audioKeys(r.state).forEach((k) => shared.add(k)); });
     const deletable = new Set(Array.from(candidates).filter((k) => !shared.has(k)));
     const pending = Array.isArray(state.audioCleanupPending) ? state.audioCleanupPending : [];
-    pending.forEach((k) => { if (/^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(k)) deletable.add(k); });
+    pending.forEach((k) => { if (/^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac|mp4)$/.test(k)) deletable.add(k); });
     clearAudioRefs(state, deletable);
     state.audioCleanupPending = Array.from(deletable);
     await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2', [JSON.stringify(state), id]);
@@ -516,7 +518,7 @@ const routes = {
     }
     state.audioCleanupPending = failed;
     await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2', [JSON.stringify(state), id]);
-    logIt('Nettoyage audio de l’archive #' + id + ' : ' + deleted + ' fichier(s) supprimé(s)' + (failed.length ? ', ' + failed.length + ' à réessayer' : '') + '.');
+    logIt('Nettoyage des médias de l’archive #' + id + ' : ' + deleted + ' fichier(s) supprimé(s)' + (failed.length ? ', ' + failed.length + ' à réessayer' : '') + '.');
     save();
     return { ok: true, deleted, pending: failed.length };
   },
@@ -747,20 +749,19 @@ function createPrizePayouts() {
 }
 function audioKeys(state) {
   const keys = new Set();
-  const add = (v) => { if (typeof v === 'string' && /^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(v)) keys.add(v); };
+  const add = (v) => { if (typeof v === 'string' && (/^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(v) || /^[a-f0-9]{24}\.mp4$/.test(v))) keys.add(v); };
   for (const u of Object.values((state && state.uploads) || {})) if (u) add(u.file);
-  for (const e of Object.values((state && state.entrants) || {})) if (e && e.audio) add(e.audio.file);
-  for (const m of Object.values((state && state.matches) || {})) if (m) { if (m.a) add(m.a.audio); if (m.b) add(m.b.audio); }
+  for (const group of Object.values((state && state.videoUploads) || {})) if (group) Object.values(group).forEach(v => add(v && v.file));
+  for (const e of Object.values((state && state.entrants) || {})) if (e) { if (e.audio) add(e.audio.file); (e.videos || []).forEach(v => add(v && v.file)); }
+  for (const m of Object.values((state && state.matches) || {})) if (m) [m.a,m.b].forEach(side => { if (side) { add(side.audio); (side.videos || []).forEach(v => add(v && v.file)); } });
   return keys;
 }
 function clearAudioRefs(state, keys) {
   const remove = (v) => keys.has(v);
   for (const u of Object.values(state.uploads || {})) if (u && remove(u.file)) delete u.file;
-  for (const e of Object.values(state.entrants || {})) if (e && e.audio && remove(e.audio.file)) e.audio = null;
-  for (const m of Object.values(state.matches || {})) if (m) {
-    if (m.a && remove(m.a.audio)) m.a.audio = null;
-    if (m.b && remove(m.b.audio)) m.b.audio = null;
-  }
+  for (const group of Object.values(state.videoUploads || {})) if (group) Object.keys(group).forEach(k => { if (group[k] && remove(group[k].file)) delete group[k]; });
+  for (const e of Object.values(state.entrants || {})) if (e) { if (e.audio && remove(e.audio.file)) e.audio = null; (e.videos || []).forEach(v => { if (v && remove(v.file)) v.file = null; }); }
+  for (const m of Object.values(state.matches || {})) if (m) [m.a,m.b].forEach(side => { if (side) { if (remove(side.audio)) side.audio = null; (side.videos || []).forEach(v => { if (v && remove(v.file)) v.file = null; }); } });
 }
 async function archivedStorage() {
   const q = await pool.query('SELECT id, archived_at, state FROM tournament_archives ORDER BY archived_at DESC');
