@@ -135,7 +135,7 @@ function createRound(r, ids) {
     const idx = i / 2 + 1, id = 'r' + r + 'm' + idx;
     let aU = order[i], bU = order[i + 1] || null;
     if (bU && crypto.randomInt(2) === 1) { const x = aU; aU = bU; bU = x; }
-    const side = (u, k) => { const e = S.entrants[u]; return { slot: id + k, title: e.title, anime: e.anime, link: e.link || null, audio: e.audio ? e.audio.file : null }; };
+    const side = (u, k) => { const e = S.entrants[u]; return { slot: id + k, title: e.title, anime: e.anime, link: e.link || null, audio: e.audio ? e.audio.file : null, videos: e.videos || null }; };
     const m = { id: id, round: r, idx: idx, status: bU ? 'attente' : 'clos', a: side(aU, 'a'), b: bU ? side(bU, 'b') : null };
     if (!bU) { m.bye = true; m.winnerSlot = id + 'a'; m.reveal = { a: S.entrants[aU].name }; }
     S.matches[id] = m;
@@ -232,7 +232,8 @@ function publicState(vid) {
     const e = S.entrants[vid], c = codeOf(vid);
     out.me = {
       name: c && c.name || null,
-      entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link || null, audio: e.audio ? e.audio.file : null, matchId: e.matchId || null, slot: e.slot || null } : null,
+      entry: e ? { name: e.name, anime: e.anime, title: e.title, link: e.link || null, audio: e.audio ? e.audio.file : null, videos: e.videos || null, matchId: e.matchId || null, slot: e.slot || null } : null,
+      videoUploads: S.videoUploads && S.videoUploads[vid] ? S.videoUploads[vid] : {},
       votes: S.votes[vid] || {},
       mobileMoney: c && c.mobileMoney ? c.mobileMoney : null,
       prize: S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === vid) || null : null
@@ -443,19 +444,34 @@ const routes = {
     const vid = voterId(req);
     if (!vid) fail(401, 'Entre ton code d\'invitation d\'abord.');
     needTournament('inscription');
-    const name = clean(body.name, 40), anime = clean(body.anime, 60), title = clean(body.title, 80);
+    const name = clean(body.name, 40);
+    if (!name) fail(400, 'Indique ton pseudo.');
+    if (S.t.mediaMode === 'video3') {
+      const submitted = Array.isArray(body.videos) ? body.videos : [];
+      if (submitted.length !== 3) fail(400, 'Renseigne les informations des 3 vidéos.');
+      const old = S.entrants[vid] && Array.isArray(S.entrants[vid].videos) ? S.entrants[vid].videos : [];
+      const uploaded = (S.videoUploads && S.videoUploads[vid]) || {};
+      const videos = submitted.map((v, i) => {
+        const title = clean(v && v.title, 80), anime = clean(v && v.anime, 60);
+        const up = uploaded[i + 1] || old[i];
+        if (!title || !anime) fail(400, 'Complète le titre et l’anime des 3 vidéos.');
+        if (!up || !up.file) fail(400, 'Envoie les 3 vidéos avant de valider.');
+        return { title, anime, file: up.file, duration: Number(up.duration || 0) };
+      });
+      S.entrants[vid] = { name, videos };
+      delete S.videoUploads[vid];
+      save();
+      return { ok: true };
+    }
+    const anime = clean(body.anime, 60), title = clean(body.title, 80);
     const rawLink = clean(body.link, 300), link = rawLink ? safeUrl(rawLink) : null;
-    if (!name || !anime || !title) fail(400, 'Remplis le pseudo, l\'anime et le titre.');
+    if (!anime || !title) fail(400, 'Remplis le pseudo, l\'anime et le titre.');
     if (rawLink && !link) fail(400, 'Le lien doit commencer par https://');
     let audio = (S.entrants[vid] && S.entrants[vid].audio) || null;
     const up = S.uploads[vid];
-    if (up) {
-      if (audio && audio.file !== up.file) unlinkAudio(audio.file);
-      audio = up;
-      delete S.uploads[vid];
-    }
+    if (up) { if (audio && audio.file !== up.file) unlinkAudio(audio.file); audio = up; delete S.uploads[vid]; }
     if (!audio && !link) fail(400, 'Envoie un fichier audio ou colle un lien.');
-    S.entrants[vid] = { name: name, anime: anime, title: title, link: link, audio: audio };
+    S.entrants[vid] = { name, anime, title, link, audio };
     save();
     return { ok: true };
   },
@@ -528,7 +544,7 @@ const routes = {
     if (S.t) fail(409, 'Un tournoi existe déjà. Utilise « Nouveau tournoi ».');
     const name = clean(body.name, 60);
     if (!name) fail(400, 'Donne un nom au tournoi.');
-    S.t = { name: name, status: 'inscription', round: 0, createdAt: Date.now(), prizeConfig: { enabled: false, amounts: { first: 0, second: 0, third: 0 } } };
+    S.t = { name: name, mediaMode: 'video3', status: 'inscription', round: 0, createdAt: Date.now(), prizeConfig: { enabled: false, amounts: { first: 0, second: 0, third: 0 } } };
     logIt('Tournoi créé : ' + name + '. Inscriptions ouvertes.');
     save();
     return { ok: true };
