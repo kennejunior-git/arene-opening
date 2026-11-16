@@ -106,13 +106,19 @@
   function renderLogin() {
     var el = $('login');
     if (!S || !S.t) { el.hidden = true; return; }
-    var key = JSON.stringify([!!S.me, S.me && S.me.name, loginErr]);
+    var key = JSON.stringify([!!S.me, S.me && S.me.name, S.me && S.me.mobileMoney, S.me && S.me.prize, loginErr]);
     if (key === lastLoginKey) return;
     lastLoginKey = key;
     el.hidden = false;
     var pseudoHint = 'Ton pseudo sera affiché avec ton choix quand le duel est terminé. Il est choisi une seule fois, à ta première connexion avec ce code.';
     if (S.me && S.me.name) {
-      el.innerHTML = '<div class="row"><p class="note">Connecté : <strong>' + esc(S.me.name) + '</strong></p><button class="btn small" id="logoutBtn" type="button">Changer de code</button></div>';
+      el.innerHTML = '<div class="row"><p class="note">Connecté : <strong>' + esc(S.me.name) + '</strong></p><button class="btn small" id="logoutBtn" type="button">Changer de code</button></div>' +
+        '<details class="stack"><summary>Mes coordonnées Mobile Money (privées)</summary><p class="hint">Ces informations sont visibles uniquement par l’organisateur pour te verser une récompense.</p>' +
+        '<form id="mobileMoneyForm" class="stack"><label for="mmProvider">Opérateur</label><select id="mmProvider" name="provider"><option value="MTN"' + (S.me.mobileMoney && S.me.mobileMoney.provider === 'MTN' ? ' selected' : '') + '>MTN Mobile Money</option><option value="ORANGE"' + (S.me.mobileMoney && S.me.mobileMoney.provider === 'ORANGE' ? ' selected' : '') + '>Orange Money</option></select>' +
+        '<label for="mmNumber">Numéro Mobile Money</label><input id="mmNumber" name="number" inputmode="tel" maxlength="18" required value="' + esc(S.me.mobileMoney && S.me.mobileMoney.number || '') + '" placeholder="Ex. 6XXXXXXXX">' +
+        '<button class="btn small" type="submit">Enregistrer mes coordonnées</button></form></details>' +
+        (S.me.prize ? '<div class="panel"><h3>Ma récompense · ' + S.me.prize.amount + ' FCFA</h3><p>' + (S.me.prize.status === 'a_payer' ? 'En attente du paiement par l’organisateur.' : S.me.prize.status === 'envoye' ? 'Paiement envoyé via ' + (S.me.prize.method === 'MTN' ? 'MTN Mobile Money' : 'Orange Money') + '. As-tu reçu l’argent ?' : S.me.prize.status === 'recu' ? 'Réception confirmée. Merci !' : 'Tu as signalé que le paiement n’est pas reçu. L’organisateur va vérifier.') + '</p>' +
+        (S.me.prize.status === 'envoye' ? '<div class="row"><button class="btn small" type="button" data-prize-confirm="yes">Oui, j’ai reçu</button><button class="btn small" type="button" data-prize-confirm="no">Non, pas encore</button></div>' : '') + '</div>' : '');
     } else if (S.me) {
       el.innerHTML = '<h2>Choisis ton pseudo</h2><p class="lead">' + esc(pseudoHint) + '</p>' +
         '<form id="nameForm" class="stack"><label for="vname">Ton pseudo</label>' +
@@ -290,7 +296,18 @@
       e.textContent = v >= 60 && v % 60 === 0 ? (v / 60) + ' h' : v + ' minutes';
     });
   }
-  function renderAll() { renderRules(); renderHead(); renderNotice(); renderLogin(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
+  function renderPrizeAnnouncement() {
+    var el = $('prizeAnnouncement');
+    if (!el) return;
+    var cfg = S && S.t && S.t.prizeConfig;
+    if (!cfg || !cfg.enabled) { el.hidden = true; return; }
+    el.hidden = false;
+    var a = cfg.amounts || {};
+    el.innerHTML = '<h2>Récompenses du tournoi</h2><p class="lead">L’organisateur a annoncé des récompenses financières :</p><ul><li>1re place : <strong>' + Number(a.first || 0).toLocaleString('fr-FR') + ' FCFA</strong></li>' +
+      (Number(a.second || 0) > 0 ? '<li>2e place : <strong>' + Number(a.second).toLocaleString('fr-FR') + ' FCFA</strong></li>' : '') +
+      (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
+  }
+  function renderAll() { renderRules(); renderHead(); renderNotice(); renderPrizeAnnouncement(); renderLogin(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
@@ -306,7 +323,9 @@
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
-    if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
+    if (b.hasAttribute('data-prize-confirm')) {
+      api('/api/prize/confirm', { received: b.getAttribute('data-prize-confirm') === 'yes' }).then(load).catch(function (er) { loginErr = er.message; lastLoginKey = ''; load(); });
+    } else if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
     else if (b.id === 'logoutBtn') api('/api/logout', {}).then(function () { lastLoginKey = ''; lastRegKey = ''; return load(); });
   });
 
@@ -324,6 +343,10 @@
       catch (er) { loginErr = er.message; }
       lastLoginKey = '';
       await load();
+    } else if (f.id === 'mobileMoneyForm') {
+      try { await api('/api/mobile-money', { provider: f.elements.provider.value, number: f.elements.number.value }); loginErr = ''; }
+      catch (er) { loginErr = er.message; }
+      lastLoginKey = ''; await load();
     } else if (f.id === 'regForm') {
       regMsg = ''; regErr = '';
       var d = {};
