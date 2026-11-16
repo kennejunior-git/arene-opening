@@ -34,9 +34,18 @@ if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !proce
 let SECRET = process.env.SESSION_SECRET || '';
 const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, reactions: {}, uploads: {}, videoUploads: {}, bonuses: [], community: { comments: [], favorites: {} }, log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
+// Cache en mémoire des archives : évite de retransférer tous les JSONB à chaque visite communauté/admin.
+let archiveRowsCache = null;
+async function getArchiveRows() {
+  if (!archiveRowsCache) {
+    const q = await pool.query('SELECT id, archived_at, state FROM tournament_archives ORDER BY archived_at DESC');
+    archiveRowsCache = q.rows;
+  }
+  return archiveRowsCache;
+}
 function save() {
  const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
- saveQueue=saveQueue.catch(()=>{}).then(async()=>{ if(archive) await pool.query('INSERT INTO tournament_archives(state) VALUES ($1::jsonb)',[archive]); await pool.query('INSERT INTO app_state(id,state,updated_at) VALUES (1,$1::jsonb,now()) ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()',[snapshot]); });
+ saveQueue=saveQueue.catch(()=>{}).then(async()=>{ if(archive) { await pool.query('INSERT INTO tournament_archives(state) VALUES ($1::jsonb)',[archive]); archiveRowsCache=null; } await pool.query('INSERT INTO app_state(id,state,updated_at) VALUES (1,$1::jsonb,now()) ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()',[snapshot]); });
  return saveQueue;
 }
 function logIt(text) {
@@ -613,6 +622,7 @@ const routes = {
     clearAudioRefs(state, deletable);
     state.audioCleanupPending = Array.from(deletable);
     await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2', [JSON.stringify(state), id]);
+    archiveRowsCache=null;
     let deleted = 0, failed = [];
     for (const k of deletable) {
       try { await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: k })); deleted++; }
@@ -620,6 +630,7 @@ const routes = {
     }
     state.audioCleanupPending = failed;
     await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2', [JSON.stringify(state), id]);
+    archiveRowsCache=null;
     logIt('Nettoyage des médias de l’archive #' + id + ' : ' + deleted + ' fichier(s) supprimé(s)' + (failed.length ? ', ' + failed.length + ' à réessayer' : '') + '.');
     save();
     return { ok: true, deleted, pending: failed.length };
@@ -644,11 +655,12 @@ const routes = {
     await s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file}));
     const keys=new Set([file]);
     clearAudioRefs(S,keys);
-    const archives=await pool.query('SELECT id,state FROM tournament_archives');
-    for (const row of archives.rows) {
+    const archives=await getArchiveRows();
+    for (const row of archives) {
       const state=row.state; clearAudioRefs(state,keys);
       await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2',[JSON.stringify(state),row.id]);
     }
+    archiveRowsCache=null;
     logIt('Vidéo supprimée par modération : '+reason+'. Fichier '+file+'.');
     await save();
     return {ok:true};
@@ -888,15 +900,18 @@ function clearAudioRefs(state, keys) {
   for (const m of Object.values(state.matches || {})) if (m) [m.a,m.b].forEach(side => { if (side) { if (remove(side.audio)) side.audio = null; (side.videos || []).forEach(v => { if (v && remove(v.file)) v.file = null; }); } });
 }
 async function archivedStorage() {
-  const q = await pool.query('SELECT id, archived_at, state FROM tournament_archives ORDER BY archived_at DESC');
+  const rows = await getArchiveRows();
   const allRefs = audioKeys(S);
-  q.rows.forEach((r) => audioKeys(r.state).forEach((k) => allRefs.add(k)));
+  rows.forEach((r) => audioKeys(r.state).forEach((k) => allRefs.add(k)));
+  const currentRefs = audioKeys(S);
+  const refsByArchive = rows.map((r) => audioKeys(r.state));
   const archives = [];
-  for (const r of q.rows) {
-    const keys = Array.from(audioKeys(r.state));
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const keys = Array.from(refsByArchive[i]);
     const shared = keys.filter((k) => {
-      if (audioKeys(S).has(k)) return true;
-      return q.rows.some((other) => other.id !== r.id && audioKeys(other.state).has(k));
+      if (currentRefs.has(k)) return true;
+      return refsByArchive.some((otherRefs, j) => j !== i && otherRefs.has(k));
     });
     const deletable = keys.filter((k) => !shared.includes(k));
     let bytes = 0;
@@ -910,8 +925,8 @@ async function archivedStorage() {
 }
 
 async function communityData(playerId, viewerId) {
-  const archived = await pool.query('SELECT state FROM tournament_archives ORDER BY archived_at DESC');
-  const states = archived.rows.map((r) => r.state).concat([S]);
+  const archived = await getArchiveRows();
+  const states = archived.map((r) => r.state).concat([S]);
   const totals = {}, entries = {};
   states.forEach((state) => scoreTournament(state, totals, entries, state !== S));
   const key = tournamentKey(S), players = [];
