@@ -347,3 +347,24 @@ a { text-underline-offset:3px; }
   }
   .media-audio { height:46px; }
 }
+
+/* Contrôle de vitesse commun aux lecteurs */
+.media-speed {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin:3px 0 12px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:700;
+}
+.media-speed select {
+  min-width:76px;
+  padding:6px 9px;
+  border:1px solid #34435f;
+  border-radius:8px;
+  background:#17233a;
+  color:#e8eefb;
+  font:600 12px var(--mono);
+}
