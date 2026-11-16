@@ -88,7 +88,7 @@
     if (t) {
       var st = { inscription: 'Inscriptions ouvertes', en_cours: 'Tournoi en cours', termine: 'Terminé' }[t.status] || '';
       h += '<span class="chip ' + (t.status === 'en_cours' ? 'ok' : '') + '">' + st + '</span>';
-      if (t.status === 'en_cours') h += '<span class="chip">Tour ' + t.round + ' sur ' + t.roundsTotal + '</span>';
+      if (t.status === 'en_cours') h += '<span class="chip">' + (t.thirdPlaceRound === t.round ? 'Duel pour la 3e place' : 'Tour ' + t.round + ' sur ' + t.roundsTotal) + '</span>';
       var ne = t.entrantCount || (S.stats && S.stats.entrants) || 0;
       h += '<span class="chip">' + ne + ' opening' + (ne > 1 ? 's' : '') + ' inscrit' + (ne > 1 ? 's' : '') + '</span>';
     }
