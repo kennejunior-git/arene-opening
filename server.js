@@ -850,11 +850,11 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const key = req.method + ' ' + url.pathname;
     if (key === 'POST /api/audio') return handleUpload(req, res);
-    const videoUpload = /^\\/api\\/video\\/([123])$/.exec(url.pathname);
+    const videoUpload = /^\/api\/video\/([123])$/.exec(url.pathname);
     if (req.method === 'POST' && videoUpload) return handleVideoUpload(req, res, Number(videoUpload[1]));
     const am = /^\/audio\/([a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac))$/.exec(url.pathname);
     if (am && (req.method === 'GET' || req.method === 'HEAD')) return serveAudio(req, res, am[1]);
-    const vm = /^\\/video\\/([a-f0-9]{24}\\.mp4)$/.exec(url.pathname);
+    const vm = /^\/video\/([a-f0-9]{24}\.mp4)$/.exec(url.pathname);
     if (vm && (req.method === 'GET' || req.method === 'HEAD')) return serveVideo(req, res, vm[1]);
     if (url.pathname.startsWith('/api/')) {
       const fn = routes[key];
