@@ -396,6 +396,8 @@ const routes = {
     st.admin = true;
     st.codes = S.codes.map((c) => ({ code: fmtCode(c.code), used: !!c.usedAt }));
     st.entrantCount = Object.keys(S.entrants).length;
+    st.players = S.codes.filter((c) => c.name).map((c) => ({ id: c.id, name: c.name }));
+    st.bonuses = Array.isArray(S.bonuses) ? S.bonuses : [];
     return st;
   },
   'POST /api/admin/create': (req, res, body) => {
@@ -440,6 +442,21 @@ const routes = {
     save();
     return { ok: true };
   },
+  'POST /api/admin/bonus': (req, res, body) => {
+    const playerId = String(body.playerId || '');
+    const player = S.codes.find((c) => c.id === playerId && c.name);
+    if (!player) fail(400, 'Choisis un participant valide.');
+    const points = Math.trunc(Number(body.points));
+    if (!Number.isFinite(points) || points === 0 || Math.abs(points) > 1000) fail(400, 'Le bonus doit être un nombre entier entre -1000 et 1000, différent de zéro.');
+    const reason = clean(body.reason, 200);
+    if (reason.length < 3) fail(400, 'Indique une raison de 3 caractères minimum.');
+    S.bonuses = Array.isArray(S.bonuses) ? S.bonuses : [];
+    const record = { id: crypto.randomBytes(8).toString('hex'), playerId, playerName: player.name, points, reason, tournamentKey: tournamentKey(S), tournamentName: S.t ? S.t.name : 'Hors saison', at: Date.now() };
+    S.bonuses.push(record);
+    logIt('Bonus administrateur : ' + (points > 0 ? '+' : '') + points + ' point' + (Math.abs(points) > 1 ? 's' : '') + ' pour ' + player.name + ' — ' + reason + '.');
+    save();
+    return { ok: true };
+  },
   'POST /api/admin/next': () => {
     needTournament('en_cours');
     const cur = currentMatches();
@@ -463,8 +480,10 @@ const routes = {
     if (body.confirm !== 'NOUVEAU') fail(400, 'Tape NOUVEAU pour confirmer.');
     pendingArchive = JSON.stringify(S);
     const codes = S.codes.map((c) => Object.assign({}, c));
+    const bonuses = Array.isArray(S.bonuses) ? S.bonuses.slice() : [];
     S = emptyState();
     S.codes = codes;
+    S.bonuses = bonuses;
     logIt('Nouveau tournoi : les inscriptions, duels et votes précédents ont été archivés. Les codes d\'invitation sont conservés.');
     save();
     return { ok: true };
