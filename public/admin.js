@@ -94,6 +94,32 @@
     }
     h += '</section>';
 
+    /* tableau de bord */
+    var activeVideos = A.moderationVideos || [];
+    var archiveMo = ((storage.archives || []).reduce(function(n,x){return n+Number(x.bytes||0);},0) / 1048576).toFixed(1);
+    h += '<section class="panel"><h2>Tableau de bord</h2><div class="profile-stats">' +
+      '<div><strong>' + Number(A.stats && A.stats.entrants || 0) + '</strong><span>Participants inscrits</span></div>' +
+      '<div><strong>' + Number(A.stats && A.stats.codes || 0) + '</strong><span>Codes générés</span></div>' +
+      '<div><strong>' + Number(A.stats && A.stats.voted || 0) + '</strong><span>Joueurs ayant voté</span></div>' +
+      '<div><strong>' + activeVideos.length + '</strong><span>Vidéos actives</span></div>' +
+      '<div><strong>' + (storage.archives || []).length + '</strong><span>Tournois archivés</span></div>' +
+      '<div><strong>' + archiveMo + ' Mo</strong><span>Stockage libérable dans les archives</span></div>' +
+      '</div></section>';
+
+    /* modération vidéo */
+    h += '<section class="panel"><h2>Modération des vidéos</h2><p class="lead">Supprime les vidéos qui enfreignent le règlement : contenu adulte, violence explicite, contenu choquant ou autre contenu interdit. Le fichier et ses références sont supprimés, y compris dans les archives. Les votes, scores et résultats restent conservés.</p>';
+    if (!activeVideos.length) h += '<p class="note">Aucune vidéo disponible à modérer.</p>';
+    activeVideos.forEach(function(v) {
+      var size = v.size ? (v.size / 1048576).toFixed(1) + ' Mo' : 'Taille inconnue';
+      h += '<div class="block"><p><strong>' + esc(v.playerName) + '</strong> · ' + esc(v.title || 'Vidéo sans titre') + '</p>' +
+        '<p class="note">' + esc(v.anime || '') + (v.order ? ' · ordre ' + v.order : '') + ' · ' + size + (v.duration ? ' · ' + Math.round(v.duration) + ' s' : '') + '</p>' +
+        '<form class="stack videoModerationForm"><input type="hidden" name="file" value="' + esc(v.file) + '">' +
+        '<label>Motif de suppression</label><input name="reason" maxlength="200" minlength="3" placeholder="Ex. contenu adulte contraire au règlement" required>' +
+        '<label>Tape SUPPRIMER VIDEO pour confirmer</label><input name="confirm" autocomplete="off" required>' +
+        '<button class="btn small" type="submit"' + dis + '>Supprimer définitivement cette vidéo</button></form></div>';
+    });
+    h += '</section>';
+
     /* codes */
     var unused = A.codes.filter(function (c) { return !c.used; });
     h += '<section class="panel"><h2>Codes d\'invitation</h2>' +
@@ -257,6 +283,7 @@
     else if (f === 'prizeConfigForm') { var pf = new FormData(e.target); run(function () { return api('/api/admin/prize-config', { enabled: pf.get('enabled') === 'on', first: Number(pf.get('first')), second: Number(pf.get('second')), third: Number(pf.get('third')) }); }, 'Récompenses enregistrées et annoncées.'); }
     else if (f === 'bonusForm') { var bf = new FormData(e.target); run(function () { return api('/api/admin/bonus', { playerId: bf.get('playerId'), points: Number(bf.get('points')), reason: bf.get('reason') }); }, 'Bonus enregistré et ajouté au journal.'); }
     else if (f === 'storageForm') { var sf = new FormData(e.target); run(function () { return api('/api/admin/storage/cleanup', { archiveId: Number(sf.get('archiveId')), confirm: sf.get('confirm') }); }, 'Nettoyage terminé. Les résultats historiques sont conservés.'); }
+    else if (f === 'videoModerationForm') { var vf = new FormData(e.target); if (vf.get('confirm') !== 'SUPPRIMER VIDEO') { err = 'Confirmation incorrecte : tape SUPPRIMER VIDEO.'; render(); return; } if (!window.confirm('Cette vidéo sera supprimée définitivement, y compris de ses archives. Continuer ?')) return; run(function () { return api('/api/admin/video/delete', { file:vf.get('file'), reason:vf.get('reason'), confirm:vf.get('confirm') }); }, 'Vidéo supprimée. Les votes et résultats sont conservés.'); }
   });
 
   setInterval(function () { if (authed && !busy) load(); }, 10000);
