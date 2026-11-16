@@ -160,13 +160,14 @@
       var existing = e && e.videos || [];
       var pending = S.me.videoUploads || {};
       h = '<h2>' + (e ? 'Tes 3 vidéos' : 'Inscris tes 3 openings') + '</h2>' +
-        '<p class="lead">Envoie trois vidéos distinctes. Chaque vidéo dure 2 minutes maximum. Tu pourras choisir leur ordre de passage plus tard.</p>' +
+        '<p class="lead">Envoie trois vidéos distinctes et choisis pour chacune son affrontement. Chaque ordre (1, 2 et 3) doit être utilisé une seule fois. Chaque vidéo dure 2 minutes maximum.</p>' +
         '<form id="regForm" class="stack"><label for="f-name">Ton pseudo</label><input id="f-name" name="name" maxlength="40" required value="' + esc(e && e.name || S.me.name || '') + '">';
       for (var i = 1; i <= 3; i++) {
         var v = existing[i - 1] || {}, up = pending[i] || v;
         h += '<div class="panel"><h3>Vidéo ' + i + '</h3>' +
           '<label for="f-anime-' + i + '">Anime</label><input id="f-anime-' + i + '" name="anime' + i + '" maxlength="60" required value="' + esc(v.anime || '') + '">' +
           '<label for="f-title-' + i + '">Titre de l’opening</label><input id="f-title-' + i + '" name="title' + i + '" maxlength="80" required value="' + esc(v.title || '') + '">' +
+          '<label for="f-order-' + i + '">Ordre de passage</label><select id="f-order-' + i + '" name="order' + i + '"><option value="1"' + (Number(v.order || i) === 1 ? ' selected' : '') + '>1er affrontement</option><option value="2"' + (Number(v.order || i) === 2 ? ' selected' : '') + '>2e affrontement</option><option value="3"' + (Number(v.order || i) === 3 ? ' selected' : '') + '>3e affrontement</option></select>' +
           (up && up.file ? '<p class="okmsg">Vidéo ' + i + ' envoyée · ' + Math.round(Number(up.duration || 0)) + ' s</p><video controls preload="metadata" playsinline style="width:100%;max-height:260px" src="/video/' + esc(up.file) + '"></video>' : '') +
           '<label for="f-video-' + i + '">Fichier vidéo MP4 ou MOV</label><input id="f-video-' + i + '" name="video' + i + '" type="file" accept="video/mp4,video/quicktime,.mp4,.mov" ' + (up && up.file ? '' : 'required') + '>' +
           '<p class="hint">2 minutes maximum · 60 Mo maximum.</p></div>';
@@ -208,12 +209,16 @@
   }
 
   function optHTML(side, pos, m, mode) {
-    var u = safeUrl(side.link), picked = S.me && S.me.votes[m.id] === side.slot;
-    var mine = !!(S.me && S.me.entry && S.me.entry.slot === side.slot);
+    var u = safeUrl(side.link), voteKey = m.encounters ? m.id + ':e' + m.currentEncounter : m.id;
+    var picked = S.me && S.me.votes[voteKey] === side.slot;
+    var mine = !!(S.me && S.me.entry && S.me.entry.matchId === m.id);
     var isA = side.slot === m.a.slot;
+    var video = side.videos && side.videos[m.currentEncounter - 1];
+    var title = video ? video.title : side.title, anime = video ? video.anime : side.anime;
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
-      '<p class="otitle">' + esc(side.title) + '</p><p class="oanime">' + esc(side.anime) + '</p>' +
+      '<p class="otitle">' + esc(title) + '</p><p class="oanime">' + esc(anime) + '</p>' +
+      (video && video.file ? '<video controls preload="metadata" playsinline style="width:100%;max-height:320px" src="/video/' + esc(video.file) + '"></video>' : '') +
       (side.audio ? '<audio controls preload="none" src="/audio/' + esc(side.audio) + '"></audio>' : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p></div>';
@@ -249,7 +254,7 @@
     var live = m.status === 'ouvert' && t < m.closesAt;
     var chipCls = live ? 'ok' : '';
     var chipTxt = m.status === 'ouvert' && !live ? 'Calcul en cours' : STATUS[m.status];
-    var h = '<article class="duel"><div class="dhead"><h3>Duel ' + m.idx + '</h3><span class="chip ' + chipCls + '">' + chipTxt + '</span></div>';
+    var h = '<article class="duel"><div class="dhead"><h3>Duel ' + m.idx + (m.encounters ? ' · Affrontement ' + m.currentEncounter + '/3' : '') + '</h3><span class="chip ' + chipCls + '">' + chipTxt + '</span></div>';
     if (m.status === 'ouvert') {
       h += '<p class="timer">' + (live ? 'Se termine dans <span data-closes="' + m.closesAt + '">' + fmtLeft(m.closesAt - t) + '</span> · ' + esc(fmtDate(m.closesAt))
         : 'Le vote est terminé, le résultat arrive.') + '</p>';
@@ -267,6 +272,7 @@
       h += '<p class="note">' + m.tally.total + ' vote' + (m.tally.total > 1 ? 's' : '') + ' compté' + (m.tally.total > 1 ? 's' : '') +
         (m.tally.ignored ? ', ' + m.tally.ignored + ' écarté' + (m.tally.ignored > 1 ? 's' : '') + ' (participants du duel)' : '') +
         (m.extensions ? ' · ' + m.extensions + ' prolongation' + (m.extensions > 1 ? 's' : '') : '') + '.</p>';
+      if (m.encounters && m.tally) h += '<p class="note">Résultat des 3 affrontements : ' + m.tally.winsA + ' victoire(s) contre ' + m.tally.winsB + ' · total des votes ' + m.tally.a + ' – ' + m.tally.b + (m.tally.decidedByVotes ? ' (départage au total des votes)' : '') + '.</p>';
       if (m.byLot) h += '<p class="note"><span class="chip warn">Tirage au sort</span> Égalité persistante : le serveur a tiré le gagnant au hasard.</p>';
     }
     if (live && S.me && S.me.votes[m.id]) h += '<p class="okmsg">Ton vote est enregistré. Tu peux le changer jusqu\'à la fin du duel.</p>';
@@ -387,7 +393,7 @@
               if (!/^video\/(mp4|quicktime)$/.test(file.type) && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
               await uploadVideo(file, i, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + i + '… ' + p + ' %'; });
             }
-            videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value });
+            videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value, order: Number(f.elements['order' + i].value) });
           }
           await api('/api/entry', { name: f.elements.name.value, videos: videos });
         } else {
