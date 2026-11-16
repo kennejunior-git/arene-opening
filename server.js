@@ -523,12 +523,12 @@ const routes = {
 function tournamentKey(state) {
   return state && state.t ? String(state.t.createdAt || '') + '|' + String(state.t.name || '') : '';
 }
-function scoreTournament(state, totals, entries) {
+function scoreTournament(state, totals, entries, archived) {
   if (!state || !state.t) return;
   const key = tournamentKey(state);
   for (const [uid, entry] of Object.entries(state.entrants || {})) {
     if (!entries[uid]) entries[uid] = [];
-    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: state.t.status || '' });
+    if (entry && entry.title) entries[uid].push({ title: entry.title, anime: entry.anime || '', tournament: state.t.name || 'Tournoi', createdAt: state.t.createdAt || 0, status: archived ? 'archive' : (state.t.status || '') });
     if (!totals[uid]) totals[uid] = { wins: 0, tournaments: new Set(), seasonWins: 0 };
     totals[uid].tournaments.add(key);
   }
@@ -586,7 +586,7 @@ async function communityData(playerId) {
   const archived = await pool.query('SELECT state FROM tournament_archives ORDER BY archived_at DESC');
   const states = archived.rows.map((r) => r.state).concat([S]);
   const totals = {}, entries = {};
-  states.forEach((state) => scoreTournament(state, totals, entries));
+  states.forEach((state) => scoreTournament(state, totals, entries, state !== S));
   const key = tournamentKey(S), players = [];
   const bonusRows = Array.isArray(S.bonuses) ? S.bonuses : [];
   for (const code of S.codes) {
@@ -601,8 +601,8 @@ async function communityData(playerId) {
     });
   }
   const sort = (a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name, 'fr');
-  const season = players.slice().sort((a, b) => b.seasonPoints - a.seasonPoints || b.seasonWins - a.seasonWins || a.name.localeCompare(b.name, 'fr'));
-  const allTime = players.slice().sort(sort);
+  const season = players.filter((p) => (S.entrants || {})[p.id] || p.seasonBonus !== 0).sort((a, b) => b.seasonPoints - a.seasonPoints || b.seasonWins - a.seasonWins || a.name.localeCompare(b.name, 'fr'));
+  const allTime = players.filter((p) => p.tournaments > 0 || p.bonus !== 0).sort(sort);
   const out = { seasonName: S.t ? S.t.name : 'Saison actuelle', season, allTime };
   if (playerId) {
     const p = players.find((x) => x.id === playerId);
