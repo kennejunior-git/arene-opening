@@ -97,7 +97,7 @@
     /* codes */
     var unused = A.codes.filter(function (c) { return !c.used; });
     h += '<section class="panel"><h2>Codes d\'invitation</h2>' +
-      '<p class="lead">Un code par personne, à envoyer en privé. Chaque code ne vote qu\'une fois par duel. Le nombre de codes émis est affiché publiquement : n\'en génère pas plus que de membres dans ton groupe.</p>' +
+      '<p class="lead">Un code par personne, à envoyer en privé. Pour ce tournoi vidéo, chaque code vote une fois par affrontement (3 votes par duel). Le nombre de codes émis est affiché publiquement : n\'en génère pas plus que de membres dans ton groupe.</p>' +
       '<form id="codesForm" class="row"><label for="count" class="note">Combien de codes ?</label><input id="count" type="number" min="1" max="300" value="' + esc(draft.count) + '" required>' +
       '<button class="btn primary" type="submit"' + dis + '>Générer</button></form>';
     if (A.codes.length) {
