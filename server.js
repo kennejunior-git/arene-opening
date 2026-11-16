@@ -221,7 +221,7 @@ function publicState(vid) {
   const voted = Object.keys(S.votes).filter((c) => Object.keys(S.votes[c]).length > 0).length;
   const out = {
     now: Date.now(),
-    cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576 },
+    cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576, maxVideoMb: MAX_VIDEO / 1048576, maxVideoSeconds: MAX_VIDEO_SECONDS },
     t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, hasThirdPlacePlayoff: !!(S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2), thirdPlacePlayers: undefined }) : null,
     matches: matchList().map(pubMatch),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
@@ -458,7 +458,7 @@ const routes = {
         if (!up || !up.file) fail(400, 'Envoie les 3 vidéos avant de valider.');
         return { title, anime, file: up.file, duration: Number(up.duration || 0) };
       });
-      S.entrants[vid] = { name, videos };
+      S.entrants[vid] = { name, title: videos[0].title, anime: videos[0].anime, videos };
       delete S.videoUploads[vid];
       save();
       return { ok: true };
