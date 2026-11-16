@@ -220,7 +220,7 @@ function publicState(vid) {
   const out = {
     now: Date.now(),
     cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576 },
-    t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, thirdPlacePlayers: undefined }) : null,
+    t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, hasThirdPlacePlayoff: !!(S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2), thirdPlacePlayers: undefined }) : null,
     matches: matchList().map(pubMatch),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
     log: S.log.slice(-100).reverse(),
