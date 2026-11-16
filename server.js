@@ -550,40 +550,45 @@ const routes = {
     const cur = currentMatches();
     if (!cur.length || !cur.every((m) => m.status === 'clos')) fail(409, 'Tous les duels du tour doivent être terminés.');
     const winners = cur.map((m) => (m.winnerSlot === m.a.slot ? S.pairings[m.id].aUid : S.pairings[m.id].bUid));
-    if (winners.length === 1) {
-      const c = S.entrants[winners[0]];
+    const next = S.t.round + 1;
+    const finalize = (championId, runnerId, thirdId) => {
+      const c = S.entrants[championId];
       S.t.status = 'termine';
+      S.t.championId = championId;
+      S.t.runnerUpId = runnerId || null;
+      S.t.thirdPlaceId = thirdId || null;
       S.t.champion = { name: c.name, title: c.title, anime: c.anime, link: c.link };
-      logIt('Tournoi terminé. Vainqueur : ' + c.name + ' avec « ' + c.title + ' ».');
+      createPrizePayouts();
+      logIt('Tournoi terminé. Vainqueur : ' + c.name + '.');
+    };
+    if (S.t.thirdPlaceRound && S.t.round === S.t.thirdPlaceRound) {
+      const finalMatch = matchList().find((m) => m.round === S.t.roundsTotal && m.status === 'clos' && !m.bye && m.winnerSlot);
+      const finalPair = finalMatch && S.pairings[finalMatch.id];
+      if (!finalMatch || !finalPair) fail(409, 'La finale doit être terminée avant de clôturer le tournoi.');
+      const championId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.aUid : finalPair.bUid;
+      const runnerId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.bUid : finalPair.aUid;
+      const thirdMatch = cur.find((m) => m.status === 'clos' && !m.bye && m.winnerSlot);
+      const tp = thirdMatch && S.pairings[thirdMatch.id];
+      const thirdId = tp ? (thirdMatch.winnerSlot === thirdMatch.a.slot ? tp.aUid : tp.bUid) : null;
+      finalize(championId, runnerId, thirdId);
+    } else if (winners.length === 1 && S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2) {
+      createRound(next, S.t.thirdPlacePlayers);
+      S.t.thirdPlaceRound = next;
+      S.t.round = next;
+      logIt('Finale terminée. Duel spécial lancé entre les deux perdants des demi-finales pour déterminer la 3e place.');
+    } else if (winners.length === 1) {
+      const finalMatch = cur[0], pair = S.pairings[finalMatch.id];
+      const championId = finalMatch.winnerSlot === finalMatch.a.slot ? pair.aUid : pair.bUid;
+      const runnerId = finalMatch.winnerSlot === finalMatch.a.slot ? pair.bUid : pair.aUid;
+      finalize(championId, runnerId, null);
     } else {
-      const next = S.t.round + 1;
       if (S.t.round === S.t.roundsTotal - 1 && cur.length === 2 && !S.t.thirdPlacePlayers) {
         const loserIds = cur.map((m) => m.winnerSlot === m.a.slot ? S.pairings[m.id].bUid : S.pairings[m.id].aUid).filter(Boolean);
         if (loserIds.length === 2) S.t.thirdPlacePlayers = loserIds;
       }
-      if (S.t.thirdPlaceRound && S.t.round === S.t.thirdPlaceRound) {
-        const finalMatch = matchList().find((m) => m.round === S.t.roundsTotal && m.status === 'clos' && !m.bye && m.winnerSlot);
-        const finalPair = finalMatch && S.pairings[finalMatch.id];
-        if (!finalMatch || !finalPair) fail(409, 'La finale doit être terminée avant de clôturer le tournoi.');
-        const championId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.aUid : finalPair.bUid;
-        const runnerId = finalMatch.winnerSlot === finalMatch.a.slot ? finalPair.bUid : finalPair.aUid;
-        S.t.status = 'termine';
-        S.t.champion = { name: S.entrants[championId].name, title: S.entrants[championId].title, anime: S.entrants[championId].anime, link: S.entrants[championId].link };
-        S.t.runnerUpId = runnerId;
-        const thirdMatch = matchList().find((m) => m.round === S.t.thirdPlaceRound && m.status === 'clos' && !m.bye && m.winnerSlot);
-        if (thirdMatch) { const tp = S.pairings[thirdMatch.id]; S.t.thirdPlaceId = thirdMatch.winnerSlot === thirdMatch.a.slot ? tp.aUid : tp.bUid; }
-        createPrizePayouts();
-        logIt('Tournoi terminé. Vainqueur : ' + S.t.champion.name + '.');
-      } else if (S.t.thirdPlacePlayers && S.t.round === S.t.roundsTotal) {
-        createRound(next, S.t.thirdPlacePlayers);
-        S.t.thirdPlaceRound = next;
-        S.t.round = next;
-        logIt('Finale terminée. Duel pour la 3e place lancé.');
-      } else {
-        createRound(next, winners);
-        S.t.round = next;
-        logIt('Tour ' + next + ' lancé : ' + winners.length + ' qualifiés, duels tirés au sort par le serveur.');
-      }
+      createRound(next, winners);
+      S.t.round = next;
+      logIt('Tour ' + next + ' lancé : ' + winners.length + ' qualifiés, duels tirés au sort par le serveur.');
     }
     save();
     return { ok: true };
@@ -654,7 +659,7 @@ function createPrizePayouts() {
   S.t.prizePayouts = [];
   if (!cfg || !cfg.enabled) return;
   const recipients = [
-    { place: 1, playerId: S.t.champion && S.codes.find((c) => c.name === S.t.champion.name && S.entrants[c.id])?.id, amount: Number(cfg.amounts && cfg.amounts.first || 0) },
+    { place: 1, playerId: S.t.championId, amount: Number(cfg.amounts && cfg.amounts.first || 0) },
     { place: 2, playerId: S.t.runnerUpId, amount: Number(cfg.amounts && cfg.amounts.second || 0) },
     { place: 3, playerId: S.t.thirdPlaceId, amount: Number(cfg.amounts && cfg.amounts.third || 0) }
   ];
