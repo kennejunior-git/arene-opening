@@ -32,7 +32,7 @@ const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
 const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
 if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
 let SECRET = process.env.SESSION_SECRET || '';
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, videoUploads: {}, bonuses: [], log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, uploads: {}, videoUploads: {}, bonuses: [], community: { comments: [], favorites: {} }, log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 function save() {
  const snapshot=JSON.stringify(S), archive=pendingArchive; pendingArchive=null;
@@ -428,7 +428,48 @@ const routes = {
   },
   'POST /api/logout': (req, res) => { setCookie(req, res, 'v', '', 0); return { ok: true }; },
   'GET /api/state': (req) => publicState(voterId(req)),
-  'GET /api/community': async (req) => { const u = new URL(req.url, 'http://x'); const id = String(u.searchParams.get('player') || ''); if (id && !/^[a-f0-9]{16}$/.test(id)) fail(400, 'Profil invalide.'); return communityData(id || null); },
+  'GET /api/community': async (req) => { const u = new URL(req.url, 'http://x'); const id = String(u.searchParams.get('player') || ''); if (id && !/^[a-f0-9]{16}$/.test(id)) fail(400, 'Profil invalide.'); return communityData(id || null, voterId(req)); },
+  'POST /api/community/favorite': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid || !codeOf(vid).name) fail(401, 'Connecte-toi avec ton code joueur pour suivre un profil.');
+    const target = String(body.playerId || '');
+    if (!/^[a-f0-9]{16}$/.test(target) || !S.codes.some((c) => c.id === target && c.name)) fail(404, 'Joueur introuvable.');
+    if (!S.community) S.community = { comments: [], favorites: {} };
+    if (!S.community.favorites) S.community.favorites = {};
+    const list = Array.isArray(S.community.favorites[target]) ? S.community.favorites[target] : [];
+    const index = list.indexOf(vid);
+    if (index >= 0) list.splice(index, 1); else if (target !== vid) list.push(vid);
+    S.community.favorites[target] = list;
+    save();
+    return { ok: true, favorited: list.includes(vid), count: list.length };
+  },
+  'POST /api/community/comment': (req, res, body) => {
+    const vid = voterId(req);
+    if (!vid || !codeOf(vid).name) fail(401, 'Connecte-toi avec ton code joueur pour commenter.');
+    const target = String(body.playerId || '');
+    if (!/^[a-f0-9]{16}$/.test(target) || !S.codes.some((c) => c.id === target && c.name)) fail(404, 'Joueur introuvable.');
+    const message = clean(body.message, 500);
+    if (message.length < 2) fail(400, 'Ton commentaire doit contenir au moins 2 caractères.');
+    if (!S.community) S.community = { comments: [], favorites: {} };
+    if (!Array.isArray(S.community.comments)) S.community.comments = [];
+    const recent = S.community.comments.filter((c) => c.authorId === vid && Date.now() - Number(c.createdAt || 0) < 10 * 60 * 1000).length;
+    if (recent >= 5) fail(429, 'Tu as déjà publié 5 commentaires. Réessaie dans quelques minutes.');
+    S.community.comments.push({ id: crypto.randomBytes(8).toString('hex'), playerId: target, authorId: vid, authorName: codeOf(vid).name, message, createdAt: Date.now() });
+    if (S.community.comments.length > 2000) S.community.comments.splice(0, S.community.comments.length - 2000);
+    save();
+    return { ok: true };
+  },
+  'POST /api/community/comment/delete': (req, res, body) => {
+    const vid = voterId(req), id = String(body.commentId || '');
+    if (!vid && !isAdmin(req)) fail(401, 'Connecte-toi pour effectuer cette action.');
+    if (!S.community || !Array.isArray(S.community.comments)) fail(404, 'Commentaire introuvable.');
+    const index = S.community.comments.findIndex((c) => c.id === id);
+    if (index < 0) fail(404, 'Commentaire introuvable.');
+    if (!isAdmin(req) && S.community.comments[index].authorId !== vid) fail(403, 'Tu peux uniquement supprimer tes propres commentaires.');
+    S.community.comments.splice(index, 1);
+    save();
+    return { ok: true };
+  },
 
   'POST /api/entry': (req, res, body) => {
     const vid = voterId(req);
@@ -790,12 +831,15 @@ async function archivedStorage() {
   return archives;
 }
 
-async function communityData(playerId) {
+async function communityData(playerId, viewerId) {
   const archived = await pool.query('SELECT state FROM tournament_archives ORDER BY archived_at DESC');
   const states = archived.rows.map((r) => r.state).concat([S]);
   const totals = {}, entries = {};
   states.forEach((state) => scoreTournament(state, totals, entries, state !== S));
   const key = tournamentKey(S), players = [];
+  if (!S.community) S.community = { comments: [], favorites: {} };
+  if (!Array.isArray(S.community.comments)) S.community.comments = [];
+  if (!S.community.favorites) S.community.favorites = {};
   const bonusRows = Array.isArray(S.bonuses) ? S.bonuses : [];
   for (const code of S.codes) {
     if (!code.name) continue;
@@ -806,7 +850,7 @@ async function communityData(playerId) {
       id: code.id, name: code.name, wins: t.wins, seasonWins: t.seasonWins,
       bonus: allBonus, seasonBonus: seasonBonus, points: t.wins * 3 + allBonus,
       seasonPoints: t.seasonWins * 3 + seasonBonus, tournaments: t.tournaments.size,
-      championships: t.championships || 0
+      championships: t.championships || 0, favoriteCount: (S.community.favorites[code.id] || []).length
     });
   }
   const sort = (a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name, 'fr');
@@ -817,7 +861,8 @@ async function communityData(playerId) {
     const p = players.find((x) => x.id === playerId);
     if (!p) return Object.assign(out, { profile: null });
     const history = (entries[playerId] || []).filter((e) => e.status === 'termine' || e.status === 'archive');
-    out.profile = Object.assign({}, p, { titleCount: history.reduce((n, e) => n + (Array.isArray(e.videos) ? e.videos.length : 1), 0), podiums: { first: history.filter((e) => e.place === 1).length, second: history.filter((e) => e.place === 2).length, third: history.filter((e) => e.place === 3).length }, badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
+    const comments = S.community.comments.filter((c) => c.playerId === playerId).slice(-100).reverse().map((c) => Object.assign({}, c, { canDelete: !!viewerId && c.authorId === viewerId }));
+    out.profile = Object.assign({}, p, { favorited: !!viewerId && (S.community.favorites[playerId] || []).includes(viewerId), canFavorite: !!viewerId && viewerId !== playerId, comments, titleCount: history.reduce((n, e) => n + (Array.isArray(e.videos) ? e.videos.length : 1), 0), podiums: { first: history.filter((e) => e.place === 1).length, second: history.filter((e) => e.place === 2).length, third: history.filter((e) => e.place === 3).length }, badges: playerBadges(p), history: history.sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) });
   }
   return out;
 }
