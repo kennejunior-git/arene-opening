@@ -255,6 +255,13 @@
     var chipCls = live ? 'ok' : '';
     var chipTxt = m.status === 'ouvert' && !live ? 'Calcul en cours' : STATUS[m.status];
     var h = '<article class="duel"><div class="dhead"><h3>Duel ' + m.idx + (m.encounters ? ' · Affrontement ' + m.currentEncounter + '/3' : '') + '</h3><span class="chip ' + chipCls + '">' + chipTxt + '</span></div>';
+    if (m.encounters && m.encounters.some(function (x) { return x.status === 'clos'; })) {
+      h += '<p class="note">Résultats précédents : ' + m.encounters.filter(function (x) { return x.status === 'clos'; }).map(function (x) {
+        var score = x.tally ? x.tally.a + '–' + x.tally.b : '—';
+        var win = x.winnerSlot === m.a.slot ? ' · opening A gagne' : x.winnerSlot === m.b.slot ? ' · opening B gagne' : ' · égalité';
+        return 'Affrontement ' + x.index + ' : ' + score + win;
+      }).join(' · ') + '</p>';
+    }
     if (m.status === 'ouvert') {
       h += '<p class="timer">' + (live ? 'Se termine dans <span data-closes="' + m.closesAt + '">' + fmtLeft(m.closesAt - t) + '</span> · ' + esc(fmtDate(m.closesAt))
         : 'Le vote est terminé, le résultat arrive.') + '</p>';
