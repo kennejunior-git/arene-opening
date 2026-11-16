@@ -232,13 +232,14 @@
       h += '<button class="vote" data-m="' + esc(m.id) + '" data-s="' + esc(side.slot) + '" aria-pressed="' + (picked ? 'true' : 'false') + '"' +
         (can && !voting ? '' : ' disabled') + ' aria-label="Voter pour l\'opening ' + pos + '">' + (picked ? 'Ton vote ✓' : 'Voter pour celui-ci') + '</button>';
     } else if (mode === 'result') {
-      var encounterResult = m.encounters && m.encounters[m.currentEncounter - 1] && m.encounters[m.currentEncounter - 1].tally;
-      var tl = encounterResult || m.tally || { a: 0, b: 0, total: 0 };
+      var encounterRecord = m.encounters && m.encounters[m.currentEncounter - 1];
+      var tl = encounterRecord && encounterRecord.tally || m.tally || { a: 0, b: 0, total: 0 };
       var n = isA ? tl.a : tl.b, pct = tl.total ? Math.round(100 * n / tl.total) : 0;
-      var won = m.winnerSlot === side.slot;
+      var won = encounterRecord ? encounterRecord.winnerSlot === side.slot : m.winnerSlot === side.slot;
+      var winnerLabel = encounterRecord ? (won ? 'Affrontement gagné' : '') : (won ? 'Qualifié' : '');
       var nm = m.reveal ? (isA ? m.reveal.a : m.reveal.b) : null;
       var vn = m.voters ? (isA ? m.voters.a : m.voters.b) : null;
-      h += '<div class="res">' + (nm ? '<p class="oanime">Présenté par <strong>' + esc(nm) + '</strong>' + (won ? ' <span class="chip ok">Qualifié</span>' : '') + '</p>' : '') +
+      h += '<div class="res">' + (nm ? '<p class="oanime">Présenté par <strong>' + esc(nm) + '</strong>' + (winnerLabel ? ' <span class="chip ok">' + winnerLabel + '</span>' : '') + '</p>' : '') +
         '<div class="track"><div class="fill" style="width:' + pct + '%"></div></div>' +
         '<p class="nums"><span>' + n + ' voix</span><span>' + pct + ' %</span></p>' +
         (vn && vn.length ? '<details class="voters"><summary>Voir les ' + vn.length + ' votant' + (vn.length > 1 ? 's' : '') + '</summary><p>' + vn.map(esc).join(', ') + '</p></details>' : '') + '</div>';
@@ -280,10 +281,11 @@
       h += '<p class="note">' + m.tally.total + ' vote' + (m.tally.total > 1 ? 's' : '') + ' compté' + (m.tally.total > 1 ? 's' : '') +
         (m.tally.ignored ? ', ' + m.tally.ignored + ' écarté' + (m.tally.ignored > 1 ? 's' : '') + ' (participants du duel)' : '') +
         (m.extensions ? ' · ' + m.extensions + ' prolongation' + (m.extensions > 1 ? 's' : '') : '') + '.</p>';
-      if (m.encounters && m.tally) h += '<p class="note">Résultat des 3 affrontements : ' + m.tally.winsA + ' victoire(s) contre ' + m.tally.winsB + ' · total des votes ' + m.tally.a + ' – ' + m.tally.b + (m.tally.decidedByVotes ? ' (départage au total des votes)' : '') + '.</p>';
+      if (m.encounters && m.tally) h += '<p class="note">Résultat des 3 affrontements : ' + m.tally.winsA + ' victoire(s) contre ' + m.tally.winsB + ' · total des votes ' + m.tally.a + ' – ' + m.tally.b + (m.tally.decidedByVotes ? ' (départage au total des votes)' : '') + ' · qualifié : <strong>' + esc(m.winnerSlot === m.a.slot ? m.reveal.a : m.reveal.b) + '</strong>.</p>';
       if (m.byLot) h += '<p class="note"><span class="chip warn">Tirage au sort</span> Égalité persistante : le serveur a tiré le gagnant au hasard.</p>';
     }
-    if (live && S.me && S.me.votes[m.id]) h += '<p class="okmsg">Ton vote est enregistré. Tu peux le changer jusqu\'à la fin du duel.</p>';
+    var activeVoteKey = m.encounters ? m.id + ':e' + m.currentEncounter : m.id;
+    if (live && S.me && S.me.votes[activeVoteKey]) h += '<p class="okmsg">Ton vote est enregistré. Tu peux le changer jusqu\'à la fin de cet affrontement.</p>';
     if (live && S.me && S.me.entry && S.me.entry.matchId === m.id) h += '<p class="note">C\'est ton duel : tu ne votes pas ici.</p>';
     if (live && !S.me) h += '<p class="note">Entre ton code d\'invitation en haut de la page pour voter.</p>';
     if (live && S.me && !S.me.name) h += '<p class="note">Choisis ton pseudo en haut de la page pour voter.</p>';
@@ -359,7 +361,9 @@
     voting = true; voteMsg = ''; renderDuels();
     try {
       await api('/api/vote', { matchId: mid, slot: slot });
-      S.me.votes[mid] = slot;
+      var match = S.matches.find(function (m) { return m.id === mid; });
+      var voteKey = match && match.encounters ? mid + ':e' + match.currentEncounter : mid;
+      S.me.votes[voteKey] = slot;
     } catch (e) { voteMsg = e.message || 'Ton vote n\'a pas pu être enregistré.'; }
     voting = false; renderDuels(); load();
   }
