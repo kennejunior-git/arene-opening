@@ -35,7 +35,7 @@
     var comments = p.comments || [];
     h += '</section><section class="profile-section community-comments"><div class="section-heading"><div><p class="eyebrow">Communauté</p><h3>Messages sur ce joueur</h3></div><span class="section-count">' + comments.length + '</span></div>' +
       '<form id="commentForm" class="comment-form"><label for="commentMessage">Laisser un commentaire (500 caractères maximum)</label><textarea id="commentMessage" maxlength="500" rows="3" placeholder="Encourage ce joueur ou réagis à ses performances…" required></textarea><div class="comment-form-foot"><small id="commentStatus">Respecte les autres joueurs.</small><button class="btn primary" type="submit">Publier</button></div></form>' +
-      (comments.length ? '<ul class="comment-list">' + comments.map(function (c) { return '<li><div class="comment-head"><strong>' + esc(c.authorName) + '</strong><time>' + new Date(c.createdAt).toLocaleString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + '</time></div><p>' + esc(c.message) + '</p>' + (c.canDelete ? '<button class="comment-delete" data-comment="' + esc(c.id) + '" type="button">Supprimer</button>' : '') + '</li>'; }).join('') + '</ul>' : '<p class="note">Pas encore de commentaire. Sois le premier à encourager ce joueur !</p>') + '</section><a href="/community" class="btn profile-back">← Retour aux classements</a>';
+      (comments.length ? '<ul class="comment-list">' + comments.map(function (c) { return '<li><div class="comment-head"><strong>' + esc(c.authorName) + '</strong><time>' + new Date(c.createdAt).toLocaleString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + '</time></div><p>' + esc(c.message) + '</p><div class="comment-actions">' + (c.canLike ? '<button class="comment-like' + (c.likedByMe ? ' active' : '') + '" data-like="' + esc(c.id) + '" type="button" aria-pressed="' + (c.likedByMe ? 'true' : 'false') + '">♥ ' + (c.likedByMe ? 'Aimé' : 'J’aime') + ' · ' + c.likes + '</button>' : '<span class="comment-like-count">♥ ' + c.likes + '</span>') + (c.canDelete ? '<button class="comment-delete" data-comment="' + esc(c.id) + '" type="button">Supprimer</button>' : '') + '</div></li>'; }).join('') + '</ul>' : '<p class="note">Pas encore de commentaire. Sois le premier à encourager ce joueur !</p>') + '</section><a href="/community" class="btn profile-back">← Retour aux classements</a>';
     return h;
   }
   async function load() {
@@ -73,6 +73,16 @@
             var cd = await cr.json(); if (!cr.ok) throw new Error(cd.error || 'Publication impossible.');
             load();
           } catch (e) { status.textContent = e.message; submit.disabled = false; }
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-like]'), function (btn) {
+          btn.addEventListener('click', async function () {
+            btn.disabled = true;
+            try {
+              var lr = await fetch('/api/community/comment/like', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ commentId:btn.getAttribute('data-like') }) });
+              var ld = await lr.json(); if (!lr.ok) throw new Error(ld.error || 'Réaction impossible.');
+              load();
+            } catch (e) { alert(e.message); btn.disabled = false; }
+          });
         });
         Array.prototype.forEach.call(document.querySelectorAll('[data-comment]'), function (btn) {
           btn.addEventListener('click', async function () {
