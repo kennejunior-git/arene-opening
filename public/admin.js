@@ -148,7 +148,7 @@
       }
       if (allClosed) {
         h += '<div class="block"><p>Tous les duels du tour sont terminés.</p><button class="btn primary" data-act="next"' + dis + '>' +
-          (cur.length === 1 && A.t.thirdPlacePlayers && !A.t.thirdPlaceRound ? 'Lancer le duel pour la 3e place' : cur.length === 1 ? 'Couronner le vainqueur' : 'Lancer le tour suivant') + '</button></div>';
+          (cur.length === 1 && A.t.hasThirdPlacePlayoff && !A.t.thirdPlaceRound ? 'Lancer le duel pour la 3e place' : cur.length === 1 ? 'Couronner le vainqueur' : 'Lancer le tour suivant') + '</button></div>';
       }
     } else {
       h += '<p class="lead">Le tournoi est terminé. Le journal public garde la trace de toutes les actions.</p>';
