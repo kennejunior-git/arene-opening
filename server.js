@@ -405,7 +405,7 @@ const routes = {
     all.rows.forEach((r) => { if (r.id !== id) audioKeys(r.state).forEach((k) => shared.add(k)); });
     const deletable = new Set(Array.from(candidates).filter((k) => !shared.has(k)));
     const pending = Array.isArray(state.audioCleanupPending) ? state.audioCleanupPending : [];
-    pending.forEach((k) => { if (/^[a-f0-9]{24}\\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(k)) deletable.add(k); });
+    pending.forEach((k) => { if (/^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(k)) deletable.add(k); });
     clearAudioRefs(state, deletable);
     state.audioCleanupPending = Array.from(deletable);
     await pool.query('UPDATE tournament_archives SET state=$1::jsonb WHERE id=$2', [JSON.stringify(state), id]);
@@ -545,7 +545,7 @@ function scoreTournament(state, totals, entries) {
 }
 function audioKeys(state) {
   const keys = new Set();
-  const add = (v) => { if (typeof v === 'string' && /^[a-f0-9]{24}\\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(v)) keys.add(v); };
+  const add = (v) => { if (typeof v === 'string' && /^[a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac)$/.test(v)) keys.add(v); };
   for (const u of Object.values((state && state.uploads) || {})) if (u) add(u.file);
   for (const e of Object.values((state && state.entrants) || {})) if (e && e.audio) add(e.audio.file);
   for (const m of Object.values((state && state.matches) || {})) if (m) { if (m.a) add(m.a.audio); if (m.b) add(m.b.audio); }
