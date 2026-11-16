@@ -202,7 +202,7 @@ function closeExpired() {
 function pubMatch(m, vid) {
   const o={id:m.id,round:m.round,idx:m.idx,status:m.status,bye:!!m.bye,a:m.a,b:m.b,closesAt:m.closesAt||null,extensions:m.extensions||0,live:!!m.live,eligible:Math.max(0,S.codes.length-(m.bye?0:2)),currentEncounter:m.currentEncounter||1,encounters:m.encounters||null};
   const reactionKey=m.id+':e'+(m.encounters?m.currentEncounter:1), stored=S.reactions&&S.reactions[reactionKey]||{};
-  const reactionSummary=(slot)=>{const entries=Object.entries(stored).filter(x=>x[1]&&x[1].slot===slot);const counts={love:0,fire:0,laugh:0,wow:0,clap:0};entries.forEach(x=>{if(counts[x[1].type]!==undefined)counts[x[1].type]++;});return {counts,mine:vid&&stored[vid]&&stored[vid].slot===slot?stored[vid].type:null,total:entries.length};};
+  const reactionSummary=(slot)=>{const entries=Object.entries(stored).filter(x=>x[1]&&x[1].slot===slot);const counts={love:0,fire:0,laugh:0,wow:0,clap:0};entries.forEach(x=>{if(counts[x[1].type]!==undefined)counts[x[1].type]++;});const mine=vid&&(stored[vid+':'+slot]||((stored[vid]||{}).slot===slot?stored[vid]:null));return {counts,mine:mine?mine.type:null,total:entries.length};};
   o.reactions={a:reactionSummary(m.a.slot),b:m.b?reactionSummary(m.b.slot):null};
   if(m.status==='ouvert'){const r=countBallots(m,m.encounters?m.currentEncounter:undefined);o.votes=r.a+r.b;if(m.live)o.liveTally={a:r.a,b:r.b};}
   if(m.status==='clos'){o.tally=m.tally||null;o.winnerSlot=m.winnerSlot;o.reveal=m.reveal;o.voters=m.voters||null;o.byLot=!!m.byLot;}
@@ -540,12 +540,14 @@ const routes = {
     if(!S.reactions) S.reactions={};
     const key=m.id+':e'+encounter;
     if(!S.reactions[key]) S.reactions[key]={};
-    const current=S.reactions[key][vid];
-    if(current&&current.slot===slot&&current.type===type) delete S.reactions[key][vid];
-    else S.reactions[key][vid]={slot,type};
+    const reactionId=vid+':'+slot;
+    const current=S.reactions[key][reactionId]||((S.reactions[key][vid]||{}).slot===slot?S.reactions[key][vid]:null);
+    if(current&&current.type===type){delete S.reactions[key][reactionId];if(S.reactions[key][vid]&&S.reactions[key][vid].slot===slot)delete S.reactions[key][vid];}
+    else {S.reactions[key][reactionId]={slot,type};if(S.reactions[key][vid]&&S.reactions[key][vid].slot===slot)delete S.reactions[key][vid];}
     save();
     const entries=Object.values(S.reactions[key]).filter(x=>x&&x.slot===slot);
-    return {ok:true,mine:S.reactions[key][vid]&&S.reactions[key][vid].slot===slot?S.reactions[key][vid].type:null,total:entries.length};
+    const mine=S.reactions[key][reactionId]||null;
+    return {ok:true,mine:mine?mine.type:null,total:entries.length};
   },
   'POST /api/vote': (req, res, body) => {
     const vid = voterId(req);
