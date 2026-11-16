@@ -220,7 +220,7 @@ function publicState(vid) {
   const out = {
     now: Date.now(),
     cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576 },
-    t: S.t,
+    t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, thirdPlacePlayers: undefined }) : null,
     matches: matchList().map(pubMatch),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
     log: S.log.slice(-100).reverse(),
@@ -630,8 +630,12 @@ function scoreTournament(state, totals, entries, archived) {
     totals[uid].wins++;
     if (state === S) totals[uid].seasonWins++;
   }
-  // Un titre est attribué uniquement si le tournoi est terminé et si le gagnant de la finale est enregistré.
-  if (state.t.status === 'termine') {
+  // Le vainqueur officiel est conservé séparément du duel de 3e place.
+  if (state.t.status === 'termine' && state.t.championId) {
+    const championId = state.t.championId;
+    if (!totals[championId]) totals[championId] = { wins: 0, tournaments: new Set(), seasonWins: 0, championships: 0 };
+    totals[championId].championships = (totals[championId].championships || 0) + 1;
+  } else if (state.t.status === 'termine') {
     const matches = Object.values(state.matches || {});
     const finalRound = matches.reduce((n, m) => Math.max(n, Number(m && m.round) || 0), 0);
     const finalMatch = matches.find((m) => m && Number(m.round) === finalRound && m.status === 'clos' && !m.bye && m.winnerSlot);
