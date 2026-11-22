@@ -451,12 +451,16 @@
           for (var i = 1; i <= 3; i++) {
             var file = f.elements['video' + i].files[0];
             if (file) {
-              if (file.size > 60 * 1048576) throw new Error('La vidéo ' + i + ' dépasse 60 Mo.');
-              if (!/^video\/(mp4|quicktime)$/.test(file.type) && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('La vidéo ' + i + ' doit être au format MP4 ou MOV.');
-              var slot = i;
-              var uploaded = await uploadVideo(file, slot, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + slot + '… ' + p + ' %'; });
-              if (!uploaded || !uploaded.file) throw new Error('La vidéo ' + slot + ' n’a pas été confirmée par le serveur.');
-              upmsg.textContent = 'Vidéo ' + slot + ' enregistrée. Préparation de la suite…';
+              try {
+                if (file.size > 60 * 1048576) throw new Error('le fichier dépasse 60 Mo.');
+                if (!/^video\/(mp4|quicktime)$/.test(file.type) && !/\.(mp4|mov)$/i.test(file.name)) throw new Error('format non accepté (MP4 ou MOV requis).');
+                var slot = i;
+                var uploaded = await uploadVideo(file, slot, function (p) { upmsg.textContent = 'Envoi de la vidéo ' + slot + '… ' + p + ' %'; });
+                if (!uploaded || !uploaded.file) throw new Error('le serveur n’a pas confirmé son enregistrement.');
+                upmsg.textContent = 'Vidéo ' + slot + ' enregistrée. Préparation de la suite…';
+              } catch (videoError) {
+                throw new Error('Vidéo n°' + i + ' refusée : ' + (videoError.message || 'envoi impossible.') + ' Vérifie cette vidéo puis réessaie.');
+              }
             }
             videos.push({ anime: f.elements['anime' + i].value, title: f.elements['title' + i].value, order: Number(f.elements['order' + i].value) });
           }
