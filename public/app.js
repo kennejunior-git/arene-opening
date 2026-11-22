@@ -193,13 +193,13 @@
         '<input id="vname" name="name" maxlength="30" minlength="2" autocomplete="off" required>' +
         '<button class="btn primary" type="submit">Valider mon pseudo</button>' + (loginErr ? '<p class="err">' + esc(loginErr) + '</p>' : '') + '</form>';
     } else {
-      el.innerHTML = '<h2>Entre ton code</h2><p class="lead">Pour voter ou t\'inscrire, utilise ton code d\'invitation personnel. Tu peux suivre les duels sans code. Pas de code ? Demande-le à l\'organisateur.</p>' +
+      el.innerHTML = '<h2>Entre ton code</h2><p class="lead">L’accès visiteur permet de regarder le tournoi sans code. Pour participer, voter ou déposer tes 3 vidéos, tu dois d’abord entrer ton code d’invitation personnel. Pas de code ? Demande-le à l’organisateur. Après connexion, le formulaire de dépôt apparaîtra automatiquement ici.</p>' +
         '<form id="loginForm" class="stack"><label for="code">Code d\'invitation</label>' +
         '<input id="code" class="codefield" name="code" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" required>' +
         '<label for="pseudo">Ton pseudo (première connexion seulement)</label>' +
         '<input id="pseudo" name="pseudo" maxlength="30" autocomplete="off">' +
         '<p class="hint">' + esc(pseudoHint) + '</p>' +
-        '<button class="btn primary" type="submit">Entrer</button>' + (loginErr ? '<p class="err">' + esc(loginErr) + '</p>' : '') + '</form>';
+        '<button class="btn primary" type="submit">Entrer et accéder au dépôt de mes vidéos</button>' + (loginErr ? '<p class="err">' + esc(loginErr) + '</p>' : '') + '</form>';
     }
   }
 
@@ -528,9 +528,14 @@
     var f = e.target;
     if (f.id === 'loginForm') {
       loginErr = '';
-      try { await api('/api/redeem', { code: f.elements.code.value, name: f.elements.pseudo.value }); lastLoginKey = ''; }
+      var connected = false;
+      try { await api('/api/redeem', { code: f.elements.code.value, name: f.elements.pseudo.value }); lastLoginKey = ''; connected = true; }
       catch (er) { loginErr = er.message; lastLoginKey = ''; }
       await load();
+      if (connected && S && S.me && S.t && S.t.status === 'inscription' && S.t.mediaMode === 'video3') {
+        var deposit = $('reg');
+        if (deposit) { deposit.hidden = false; deposit.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      }
     } else if (f.id === 'nameForm') {
       loginErr = '';
       try { await api('/api/name', { name: f.elements.name.value }); }
