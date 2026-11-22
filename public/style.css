@@ -544,3 +544,18 @@ body[data-screen="ranking"] .player-bottom-nav a[data-tab="ranking"],body[data-s
 /* Icônes classiques et cohérentes de la navigation */
 .player-bottom-nav .nav-icon{display:inline-flex;align-items:center;justify-content:center;font-size:21px;line-height:1}
 .player-bottom-nav .nav-icon svg{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+
+/* Administration : quatre écrans autonomes et une navigation mobile stable. */
+.admin-screen-heading{display:flex;flex-direction:column;gap:7px;padding:4px 2px 2px}
+.admin-screen-heading h2{font-size:clamp(1.45rem,3.5vw,2rem);letter-spacing:-.04em}
+.admin-screen-heading .lead{max-width:48rem;color:var(--muted)}
+.admin-bottom-nav .nav-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:22px}
+.admin-bottom-nav .nav-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.admin-bottom-nav button{font-size:11px;gap:5px;padding:7px 3px;transition:background .16s ease,color .16s ease}
+.admin-bottom-nav button[aria-current="page"]{background:linear-gradient(135deg,rgba(255,92,138,.2),rgba(167,139,250,.22));color:#fff;box-shadow:inset 0 0 0 1px rgba(167,139,250,.24)}
+.admin-bottom-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app section[id^="admin-"][hidden]{display:none!important}
+@media(min-width:761px){.admin-bottom-nav{position:sticky;top:10px;margin:14px auto 0;box-shadow:0 10px 35px rgba(0,0,0,.2)}}
+@media(max-width:760px){body:has(.admin-bottom-nav:not([hidden])){padding-bottom:112px}.admin-bottom-nav{gap:3px}.admin-bottom-nav button{min-height:54px}}
+@media(max-width:360px){.admin-bottom-nav button{font-size:10px}.admin-bottom-nav .nav-icon svg{width:20px;height:20px}}
