@@ -6,6 +6,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
+  var selectedAdminScreen = 'overview';
   var A = null, storage = { archives: [] }, health = null, healthErr = '', healthCheckedAt = 0, storageErr = '', authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
   var draft = { password: '', tname: '', count: '20', confirm: '', live: false };
 
@@ -44,12 +45,30 @@
     render(true);
   }
 
+  function applyAdminScreen() {
+    var groups = {
+      overview: ['admin-centre','admin-dashboard'],
+      tournament: ['admin-tournoi','admin-deroulement','admin-bonus','admin-nouveau','admin-suppression'],
+      participants: ['admin-codes','admin-moderation','admin-notifications'],
+      system: ['admin-surveillance','admin-stockage']
+    };
+    var allowed = groups[selectedAdminScreen] || groups.overview;
+    document.querySelectorAll('#app section[id^="admin-"]').forEach(function (section) {
+      section.hidden = allowed.indexOf(section.id) === -1;
+    });
+    document.querySelectorAll('[data-admin-tab]').forEach(function (button) {
+      var active = button.getAttribute('data-admin-tab') === selectedAdminScreen;
+      button.setAttribute('aria-current', active ? 'page' : 'false');
+    });
+  }
+
   function render(force) {
     var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, health, healthErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
     $('logout').hidden = !authed;
+    $('adminBottomNav').hidden = !authed;
     var el = $('app');
     if (!authed) {
       el.innerHTML = '<section class="panel"><h2>Connexion</h2><form id="loginForm" class="stack"><label for="pw">Mot de passe organisateur</label>' +
@@ -337,6 +356,7 @@
         '<button class="btn small" type="submit"' + dis + '>Archiver et recommencer</button></form></section>';
     }
     el.innerHTML = h;
+    applyAdminScreen();
   }
 
   async function run(fn, okMsg) {
