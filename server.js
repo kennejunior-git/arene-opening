@@ -793,6 +793,24 @@ const routes = {
     save();
     return { ok: true };
   },
+  'POST /api/admin/countdown': (req, res, body) => {
+    needTournament('inscription');
+    if (body.startAt === null || body.startAt === '') {
+      S.t.startAt = null;
+      logIt('Compte à rebours désactivé par l’organisateur.');
+      save();
+      return { ok: true, startAt: null };
+    }
+    const raw = String(body.startAt || '');
+    const timestamp = Date.parse(raw);
+    if (!Number.isFinite(timestamp)) fail(400, 'Date et heure invalides.');
+    if (timestamp <= Date.now()) fail(400, 'Choisis une date et une heure dans le futur.');
+    if (timestamp > Date.now() + 366 * 24 * 60 * 60 * 1000) fail(400, 'La date ne peut pas dépasser un an.');
+    S.t.startAt = timestamp;
+    logIt('Compte à rebours programmé pour le ' + frDate(timestamp) + '.');
+    save();
+    return { ok: true, startAt: timestamp };
+  },
   'POST /api/admin/prize-config': (req, res, body) => {
     needTournament('inscription');
     const enabled = body.enabled === true;
