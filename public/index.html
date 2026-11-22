@@ -8,15 +8,15 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body data-screen="home">
 <main>
   <header class="top" id="accueil">
     <div class="topbar">
       <p class="eyebrow">Tournoi d'openings · duels en binôme</p>
-      <nav class="site-nav" aria-label="Navigation principale"><a href="/" aria-current="page">Arène</a><a href="/stats">Statistiques</a><a href="/community">Communauté</a></nav>
+      <nav class="site-nav" aria-label="Navigation principale"><a href="/" aria-current="page">Accueil</a><a href="/duels">Duels</a><a href="/stats">Classement</a><a href="/community">Communauté</a><a href="/profile">Profil</a></nav>
     </div>
     <div class="hero-title"><div><p class="eyebrow">La compétition commence ici</p><h1 id="ttl">Arène des Openings</h1><p class="hero-copy">Regarde les performances. Choisis ton favori. Fais entendre ta voix.</p></div><span class="hero-mark" aria-hidden="true">AO<span>✦</span></span></div>
-    <div class="stats" id="stats"></div>
+    <div class="stats" id="stats"></div><a class="profile-shortcut" href="/profile" aria-label="Ouvrir mon profil">◉ <span>Mon profil</span></a>
   </header>
   <section id="countdown" class="panel" hidden aria-live="polite"></section>
   <section id="liveLeaderboard" class="panel" hidden aria-live="polite"></section>
@@ -49,12 +49,10 @@
   </section>
 </main>
 <nav class="bottom-nav player-bottom-nav" aria-label="Navigation principale">
-  <a href="/#accueil" aria-label="Accueil"><span class="nav-icon" aria-hidden="true">⌂</span><span>Accueil</span></a>
-  <a href="/#duels" aria-label="Duels"><span class="nav-icon" aria-hidden="true">⚔</span><span>Duels</span></a>
-  <a href="/stats" aria-label="Classement"><span class="nav-icon" aria-hidden="true">🏆</span><span>Classement</span></a>
-  <a href="/community" aria-label="Communauté"><span class="nav-icon" aria-hidden="true">◎</span><span>Communauté</span></a>
-  <a href="/#login" aria-label="Profil"><span class="nav-icon" aria-hidden="true">◉</span><span>Profil</span></a>
-</nav>
-<script src="/app.js"></script>
+  <a href="/" data-tab="home"><span class="nav-icon" aria-hidden="true">⌂</span><span>Accueil</span></a>
+  <a href="/duels" data-tab="duels"><span class="nav-icon" aria-hidden="true">⚔</span><span>Duels</span></a>
+  <a href="/stats" data-tab="ranking"><span class="nav-icon" aria-hidden="true">🏆</span><span>Classement</span></a>
+  <a href="/community" data-tab="community"><span class="nav-icon" aria-hidden="true">◎</span><span>Communauté</span></a>
+</nav><script src="/app.js"></script>
 </body>
 </html>
