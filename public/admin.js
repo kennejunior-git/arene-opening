@@ -133,7 +133,7 @@
       h += '<p class="note">' + A.codes.length + ' émis · ' + (A.codes.length - unused.length) + ' déjà utilisés · ' + unused.length + ' à distribuer</p>' +
         '<div class="row"><button class="btn small" id="copyBtn" type="button"' + (unused.length ? '' : ' disabled') + '>Copier les codes non utilisés</button>' +
         '<button class="btn small" id="dlBtn" type="button">Télécharger tous les codes</button></div>' +
-        '<ul class="codes">' + A.codes.map(function (c) { return '<li class="' + (c.used ? 'used' : '') + '">' + esc(c.code) + '</li>'; }).join('') + '</ul>';
+        '<ul class="codes">' + A.codes.map(function (c) { return '<li class="' + (c.used ? 'used' : '') + '"><strong>' + esc(c.code) + '</strong>' + (c.name ? ' <span>— ' + esc(c.name) + '</span>' : (c.used ? ' <span>— Pseudo non renseigné</span>' : ' <span>— Non distribué</span>')) + '</li>'; }).join('') + '</ul>';
     }
     h += '</section>';
 
