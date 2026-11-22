@@ -61,6 +61,7 @@
     var h = '';
     var nav = [
       ['admin-tournoi', 'Tournoi'],
+      ['admin-notifications', 'Notifications'],
       ['admin-centre', 'Centre de contrôle'],
       ['admin-surveillance', 'Surveillance technique'],
       ['admin-dashboard', 'Tableau de bord'],
@@ -75,6 +76,7 @@
     h += '<nav class="panel admin-nav" aria-label="Navigation organisateur"><h2>Navigation rapide</h2><div class="admin-nav-links">' +
       nav.map(function (item) { return '<a class="chip" href="#' + item[0] + '">' + item[1] + '</a>'; }).join('') +
       '</div></nav>';
+    h += '<section class="panel" id="admin-notifications"><h2>Notifications des participants</h2><p class="lead">Envoie une information dans l’espace personnel d’un participant ou à tous les participants inscrits.</p><form id="notificationForm" class="stack"><label>Destinataire</label><select name="playerId"><option value="all">Tous les participants</option>'+(A.players||[]).map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>';}).join('')+'</select><label>Titre</label><input name="title" maxlength="80" minlength="3" required><label>Message</label><textarea name="message" maxlength="300" minlength="3" required></textarea><button class="btn primary" type="submit"'+dis+'>Envoyer la notification</button></form><p class="hint">Les notifications restent disponibles même si le participant est déconnecté.</p></section>';
 
     /* centre de contrôle */
     var overviewMatches = Array.isArray(A.matches) ? A.matches : [];
@@ -383,6 +385,7 @@
       run(function () { return api('/api/admin/delete-unstarted', { confirm: df.get('confirm') }); }, 'Tournoi supprimé. Les codes et archives sont conservés.');
     }
     else if (f === 'resetForm') run(function () { return api('/api/admin/reset', { confirm: draft.confirm }).then(function () { draft.confirm = ''; }); }, 'Nouveau tournoi prêt.');
+    else if (f === 'notificationForm') { var nf=new FormData(e.target); run(function(){return api('/api/admin/notification',{playerId:nf.get('playerId'),title:nf.get('title'),message:nf.get('message')});},'Notification envoyée.'); }
     else if (f === 'prizeConfigForm') { var pf = new FormData(e.target); run(function () { return api('/api/admin/prize-config', { enabled: pf.get('enabled') === 'on', first: Number(pf.get('first')), second: Number(pf.get('second')), third: Number(pf.get('third')) }); }, 'Récompenses enregistrées et annoncées.'); }
     else if (f === 'bonusForm') { var bf = new FormData(e.target); run(function () { return api('/api/admin/bonus', { playerId: bf.get('playerId'), points: Number(bf.get('points')), reason: bf.get('reason') }); }, 'Bonus enregistré et ajouté au journal.'); }
     else if (f === 'storageForm') { var sf = new FormData(e.target); run(function () { return api('/api/admin/storage/cleanup', { archiveId: Number(sf.get('archiveId')), confirm: sf.get('confirm') }); }, 'Nettoyage terminé. Les résultats historiques sont conservés.'); }
