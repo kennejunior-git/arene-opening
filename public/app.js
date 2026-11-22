@@ -389,7 +389,8 @@
       (Number(a.second || 0) > 0 ? '<li>2e place : <strong>' + Number(a.second).toLocaleString('fr-FR') + ' FCFA</strong></li>' : '') +
       (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
   }
-  function renderAll() { renderRules(); renderHead(); renderNotice(); renderPrizeAnnouncement(); renderLogin(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
+  function renderNotifications(){var el=$('notifications');if(!el)return;var list=S&&S.me&&S.me.notifications||[];el.hidden=!S||!S.me||!S.me.name;if(el.hidden)return;var unread=list.filter(n=>!n.read).length;el.innerHTML='<div class="row"><h2>Mes notifications'+(unread?' · '+unread+' nouvelle(s)':'')+'</h2>'+(unread?'<button class="btn small" id="readNotifications">Tout marquer comme lu</button>':'')+'</div>'+(list.length?'<ul class="log">'+list.slice(0,20).map(n=>'<li><strong>'+esc(n.title)+'</strong><span>'+esc(n.message)+'</span><small>'+fmtDate(n.at)+(n.read?' · Lu':' · Nouveau')+'</small></li>').join('')+'</ul>':'<p class="note">Tu n’as pas encore de notification.</p>');}
+  function renderAll() { renderRules(); renderHead(); renderNotice(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
@@ -417,7 +418,8 @@
     if (b.classList.contains('reaction-btn')) sendReaction(b);
     else if (b.hasAttribute('data-prize-confirm')) {
       api('/api/prize/confirm', { received: b.getAttribute('data-prize-confirm') === 'yes' }).then(load).catch(function (er) { loginErr = er.message; lastLoginKey = ''; load(); });
-    } else if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
+    } else if (b.id === 'readNotifications') api('/api/notifications/read', {}).then(load).catch(function(){});
+    else if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
     else if (b.id === 'logoutBtn') api('/api/logout', {}).then(function () { lastLoginKey = ''; lastRegKey = ''; return load(); });
   });
 
