@@ -224,7 +224,15 @@ function publicState(vid) {
   const out = {
     now: Date.now(),
     cfg: { voteMinutes: VOTE_MINUTES, extendMinutes: EXTEND_MINUTES, maxExtensions: MAX_EXTENSIONS, maxAudioMb: MAX_AUDIO / 1048576, maxVideoMb: MAX_VIDEO / 1048576, maxVideoSeconds: MAX_VIDEO_SECONDS },
-    t: S.t ? Object.assign({}, S.t, { prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined, hasThirdPlacePlayoff: !!(S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2), thirdPlacePlayers: undefined }) : null,
+    t: S.t ? Object.assign({}, S.t, {
+      prizePayouts: undefined, championId: undefined, runnerUpId: undefined, thirdPlaceId: undefined,
+      hasThirdPlacePlayoff: !!(S.t.thirdPlacePlayers && S.t.thirdPlacePlayers.length === 2), thirdPlacePlayers: undefined,
+      podium: S.t.status === 'termine' ? [
+        S.t.championId && S.entrants[S.t.championId] ? { place: 1, name: S.entrants[S.t.championId].name, title: S.entrants[S.t.championId].title, anime: S.entrants[S.t.championId].anime, link: S.entrants[S.t.championId].link || null } : null,
+        S.t.runnerUpId && S.entrants[S.t.runnerUpId] ? { place: 2, name: S.entrants[S.t.runnerUpId].name, title: S.entrants[S.t.runnerUpId].title, anime: S.entrants[S.t.runnerUpId].anime, link: S.entrants[S.t.runnerUpId].link || null } : null,
+        S.t.thirdPlaceId && S.entrants[S.t.thirdPlaceId] ? { place: 3, name: S.entrants[S.t.thirdPlaceId].name, title: S.entrants[S.t.thirdPlaceId].title, anime: S.entrants[S.t.thirdPlaceId].anime, link: S.entrants[S.t.thirdPlaceId].link || null } : null
+      ].filter(Boolean) : []
+    }) : null,
     matches: matchList().map((m) => pubMatch(m, vid)),
     stats: { codes: S.codes.length, used: S.codes.filter((c) => c.usedAt).length, voted: voted, entrants: Object.keys(S.entrants).length },
     log: S.log.slice(-100).reverse(),
