@@ -7,7 +7,7 @@
     });
   };
 
-  var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '', leaderboardData = null;
+  var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '', leaderboardData = null, communityLoadedAt = 0, loadInFlight = false, reactionPending = Object.create(null);
   var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1, registrationBusy = false, registrationHold = false;
   var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', clos: 'Terminé' };
 
@@ -83,25 +83,41 @@
   }
 
   async function api(path, body) {
-    var r = await fetch(path, {
-      method: body ? 'POST' : 'GET',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined
-    });
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timeout = controller ? setTimeout(function () { controller.abort(); }, 20000) : null;
+    var r;
+    try {
+      r = await fetch(path, {
+        method: body ? 'POST' : 'GET',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller ? controller.signal : undefined
+      });
+    } catch (networkError) {
+      if (networkError && networkError.name === 'AbortError') throw new Error('La connexion est trop lente. Réessaie.');
+      throw networkError;
+    } finally { if (timeout) clearTimeout(timeout); }
     var j = {};
     try { j = await r.json(); } catch (e) { /* vide */ }
     if (!r.ok) { var err = new Error(j.error || 'Erreur'); err.status = r.status; throw err; }
     return j;
   }
   async function load() {
+    if (loadInFlight) return;
+    loadInFlight = true;
     try {
       var nextState = await api('/api/state');
       syncBrowserNotifications(nextState);
       S = nextState;
-      try { leaderboardData = await api('/api/community'); } catch (rankingError) { /* Le classement reste indisponible sans bloquer l’arène. */ }
+      // Le classement dépend des archives : il n'a pas besoin d'être recalculé à chaque sondage.
+      if (!leaderboardData || Date.now() - communityLoadedAt >= 60000) {
+        try { leaderboardData = await api('/api/community'); communityLoadedAt = Date.now(); }
+        catch (rankingError) { /* Le classement reste indisponible sans bloquer l’arène. */ }
+      }
       offset = S.now - Date.now();
       loadErr = '';
     } catch (e) { loadErr = 'Impossible de joindre le serveur. Nouvel essai en cours…'; }
+    finally { loadInFlight = false; }
     renderAll();
   }
 
@@ -314,7 +330,7 @@
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(title) + '</p><p class="oanime">' + esc(anime) + '</p>' +
-      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" src="/video/' + esc(video.file) + '"></video>' + mediaSpeedHTML() : '') +
+      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" preload="none" src="/video/' + esc(video.file) + '"></video>' + mediaSpeedHTML() : '') +
       (side.audio ? '<audio class="media-audio" controls preload="metadata" aria-label="Écouter l’opening" src="/audio/' + esc(side.audio) + '"></audio>' + mediaSpeedHTML() : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p>' + reactionHTML(m, side) + '</div>';
@@ -388,6 +404,32 @@
     return h + '</article>';
   }
 
+  function refreshDuelActions() {
+    if (!S || !Array.isArray(S.matches)) return;
+    document.querySelectorAll('#duels .reaction-btn').forEach(function (button) {
+      var match = S.matches.find(function (m) { return m.id === button.getAttribute('data-m'); });
+      if (!match) return;
+      var slot = button.getAttribute('data-s'), sideKey = slot === match.a.slot ? 'a' : 'b';
+      var data = match.reactions && match.reactions[sideKey] || { counts: {}, mine: null };
+      var type = button.getAttribute('data-reaction'), count = Number(data.counts && data.counts[type] || 0);
+      var mine = data.mine === type, key = match.id + '|' + slot + '|' + type;
+      var number = button.querySelector('b');
+      if (number) number.textContent = String(count);
+      button.classList.toggle('active', mine);
+      button.setAttribute('aria-pressed', mine ? 'true' : 'false');
+      button.disabled = !(S.me && S.me.name) || !!reactionPending[key];
+    });
+    document.querySelectorAll('#duels .vote').forEach(function (button) {
+      var match = S.matches.find(function (m) { return m.id === button.getAttribute('data-m'); });
+      if (!match) return;
+      var slot = button.getAttribute('data-s'), voteKey = match.encounters ? match.id + ':e' + match.currentEncounter : match.id;
+      var picked = !!(S.me && S.me.votes && S.me.votes[voteKey] === slot);
+      button.textContent = picked ? 'Ton vote ✓' : 'Voter pour celui-ci';
+      button.setAttribute('aria-pressed', picked ? 'true' : 'false');
+      button.disabled = voting || !eligible(match);
+    });
+  }
+
   function renderDuels() {
     var el = $('duels');
     // Keep the real audio elements alive during refreshes. Recreating them
@@ -397,7 +439,10 @@
     // Do not rebuild the duel DOM while a media stream is playing.
     // Replacing innerHTML, even if the same media node is moved back later,
     // can interrupt playback on mobile browsers (notably Android/Chrome).
-    if (existingAudio.concat(existingVideo).some(function (media) { return !media.paused && !media.ended; })) return;
+    if (existingAudio.concat(existingVideo).some(function (media) { return !media.paused && !media.ended; })) {
+      refreshDuelActions();
+      return;
+    }
     if (!S || !S.t) { el.innerHTML = ''; return; }
     if (S.t.status === 'inscription') {
       el.innerHTML = '<h2>Duels</h2><p class="lead">Les duels apparaîtront ici après le tirage au sort, avec les deux openings face à face.</p>';
@@ -481,21 +526,27 @@
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
     if (voting) return;
-    voting = true; voteMsg = ''; renderDuels();
+    voting = true; voteMsg = ''; refreshDuelActions();
     try {
       await api('/api/vote', { matchId: mid, slot: slot });
       var match = S.matches.find(function (m) { return m.id === mid; });
       var voteKey = match && match.encounters ? mid + ':e' + match.currentEncounter : mid;
-      S.me.votes[voteKey] = slot;
+      if (S.me) { S.me.votes = S.me.votes || {}; S.me.votes[voteKey] = slot; }
+      await load();
     } catch (e) { voteMsg = e.message || 'Ton vote n\'a pas pu être enregistré.'; }
-    voting = false; renderDuels(); load();
+    finally { voting = false; refreshDuelActions(); }
   }
 
   async function sendReaction(button) {
-    if(reacting)return;reacting=true;renderDuels();
-    try{await api('/api/reaction',{matchId:button.getAttribute('data-m'),slot:button.getAttribute('data-s'),encounter:Number(button.getAttribute('data-e')),type:button.getAttribute('data-reaction')});await load();}
-    catch(e){voteMsg=e.message||'Réaction impossible.';}
-    finally{reacting=false;renderDuels();}
+    var mid=button.getAttribute('data-m'), slot=button.getAttribute('data-s'), type=button.getAttribute('data-reaction');
+    var key=mid+'|'+slot+'|'+type;
+    if(reactionPending[key])return;
+    reactionPending[key]=true;button.disabled=true;
+    try {
+      await api('/api/reaction',{matchId:mid,slot:slot,encounter:Number(button.getAttribute('data-e')),type:type});
+      await load();
+    } catch(e) { voteMsg=e.message||'Réaction impossible.'; }
+    finally { delete reactionPending[key]; refreshDuelActions(); }
   }
 
   document.addEventListener('click', function (e) {
@@ -606,7 +657,7 @@
     var c = S.matches.filter(function (m) { return m.status === 'ouvert' && t >= m.closesAt; }).length;
     if (c !== lastExp) { lastExp = c; renderDuels(); if (c) load(); }
   }, 1000);
-  setInterval(load, 10000);
+  setInterval(load, 30000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
 
   document.addEventListener('play', function (e) {
