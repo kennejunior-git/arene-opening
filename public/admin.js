@@ -6,6 +6,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
+  var selectedAdminScreen = 'overview';
   var A = null, storage = { archives: [] }, health = null, healthErr = '', healthCheckedAt = 0, storageErr = '', authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
   var draft = { password: '', tname: '', count: '20', confirm: '', live: false };
 
