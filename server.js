@@ -449,9 +449,26 @@ function handleUpload(req, res) {
     sendJson(res, 200, { ok: true, file: file });
   });
 }
-async function serveVideo(req,res,file){
- try { const range=String(req.headers.range||''); const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})})); const h=Object.assign({'Content-Type':'video/mp4','Accept-Ranges':'bytes','Cache-Control':'public, max-age=86400, immutable'},SEC); if(obj.ContentLength!=null)h['Content-Length']=obj.ContentLength; if(obj.ContentRange)h['Content-Range']=obj.ContentRange; res.writeHead(obj.ContentRange?206:200,h); if(req.method==='HEAD'){if(obj.Body&&obj.Body.destroy)obj.Body.destroy();return res.end();} if(obj.Body&&obj.Body.pipe)obj.Body.pipe(res); else res.end(Buffer.from(await obj.Body.transformToByteArray())); }
- catch(e){if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');} console.error('Lecture vidéo:',e);if(!res.headersSent){res.writeHead(502,SEC);res.end('Vidéo indisponible');}}
+async function serveVideo(req,res,file,adminStream=false){
+ try {
+  const range=String(req.headers.range||'');
+  const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})}));
+  const h=Object.assign({'Content-Type':'video/mp4','Accept-Ranges':'bytes','Cache-Control':'public, max-age=86400, immutable'},SEC);
+  if(obj.ContentLength!=null)h['Content-Length']=obj.ContentLength;
+  if(obj.ContentRange)h['Content-Range']=obj.ContentRange;
+  res.writeHead(obj.ContentRange?206:200,h);
+  if(req.method==='HEAD'){if(obj.Body&&obj.Body.destroy)obj.Body.destroy();return res.end();}
+  if(obj.Body&&obj.Body.pipe){
+   if(adminStream){
+    pipeline(obj.Body,res,(err)=>{if(err)console.error('Flux vidéo administration interrompu:',err.message);});
+   } else obj.Body.pipe(res);
+  } else res.end(Buffer.from(await obj.Body.transformToByteArray()));
+ } catch(e){
+  if(e.name==='NoSuchKey'||(e.$metadata&&e.$metadata.httpStatusCode===404)){res.writeHead(404,SEC);return res.end('Introuvable');}
+  console.error(adminStream?'Lecture vidéo administration:':'Lecture vidéo:',e);
+  if(!res.headersSent){res.writeHead(502,SEC);res.end('Vidéo indisponible');}
+  else if(adminStream&&!res.destroyed)res.destroy(e);
+ }
 }
 async function serveAudio(req,res,file){
  try{const range=String(req.headers.range||'');const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:file,...(range?{Range:range}:{})}));
@@ -1183,6 +1200,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && videoUpload) return handleVideoUpload(req, res, Number(videoUpload[1]));
     const am = /^\/audio\/([a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac))$/.exec(url.pathname);
     if (am && (req.method === 'GET' || req.method === 'HEAD')) return serveAudio(req, res, am[1]);
+    const adminVm = /^\/api\/admin\/video\/stream\/([a-f0-9]{24}\.mp4)$/.exec(url.pathname);
+    if (adminVm && (req.method === 'GET' || req.method === 'HEAD')) {
+      if (!isAdmin(req)) return sendJson(res, 401, { error: 'Connexion organisateur requise.' });
+      return serveVideo(req, res, adminVm[1], true);
+    }
     const vm = /^\/video\/([a-f0-9]{24}\.mp4)$/.exec(url.pathname);
     if (vm && (req.method === 'GET' || req.method === 'HEAD')) return serveVideo(req, res, vm[1]);
     if (url.pathname.startsWith('/api/')) {
