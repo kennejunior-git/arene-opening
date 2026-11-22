@@ -254,10 +254,26 @@
     var el = $('champ');
     if (!S || !S.t || S.t.status !== 'termine' || !S.t.champion) { el.hidden = true; return; }
     var c = S.t.champion, u = safeUrl(c.link);
+    var podium = Array.isArray(S.t.podium) ? S.t.podium : [];
+    var medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
     el.hidden = false;
     el.className = 'champ';
-    el.innerHTML = '<p class="eyebrow">Vainqueur du tournoi</p><h2>' + esc(c.title) + '</h2><p>' + esc(c.anime) + ' · présenté par <strong>' + esc(c.name) + '</strong></p>' +
-      (u ? '<p><a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Écouter sur ' + esc(hostOf(u)) + ' ↗</a></p>' : '');
+    var html = '<p class="eyebrow">Cérémonie officielle des résultats</p><h2>Le podium du tournoi</h2>' +
+      '<p class="lead">Félicitations aux participants qui ont marqué cette compétition !</p>';
+    if (podium.length) {
+      html += '<div class="podium-results">' + podium.map(function (p) {
+        var link = safeUrl(p.link);
+        return '<article class="podium-place place-' + Number(p.place) + '"><span class="podium-medal">' +
+          medals[p.place] + '</span><p class="eyebrow">' + (p.place === 1 ? 'Champion' : p.place === 2 ? 'Finaliste' : '3e place') +
+          '</p><h3>' + esc(p.name) + '</h3><strong>' + esc(p.title || 'Opening') + '</strong><p>' +
+          esc(p.anime || '') + '</p>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Écouter ↗</a>' : '') +
+          '</article>';
+      }).join('') + '</div>';
+    } else {
+      html += '<h3>' + esc(c.name) + '</h3><strong>' + esc(c.title) + '</strong><p>' + esc(c.anime) + '</p>';
+    }
+    html += '<p class="lead">Merci à tous les participants et aux membres du public pour leurs votes.</p>';
+    el.innerHTML = html;
   }
 
   function eligible(m) {
