@@ -78,23 +78,7 @@
     }
     var dis = busy ? ' disabled' : '';
     var h = '';
-    var nav = [
-      ['admin-tournoi', 'Tournoi'],
-      ['admin-notifications', 'Notifications'],
-      ['admin-centre', 'Centre de contrôle'],
-      ['admin-surveillance', 'Surveillance technique'],
-      ['admin-dashboard', 'Tableau de bord'],
-      ['admin-moderation', 'Modération vidéos'],
-      ['admin-codes', 'Codes d’invitation'],
-      ['admin-deroulement', 'Déroulement'],
-      ['admin-bonus', 'Bonus et pénalités'],
-      ['admin-stockage', 'Stockage archives']
-    ];
-    if (A.t && A.t.status === 'inscription' && Object.keys(A.matches || {}).length === 0) nav.push(['admin-suppression', 'Supprimer tournoi']);
-    if (A.t) nav.push(['admin-nouveau', 'Nouveau tournoi']);
-    h += '<nav class="panel admin-nav" aria-label="Navigation organisateur"><h2>Navigation rapide</h2><div class="admin-nav-links">' +
-      nav.map(function (item) { return '<a class="chip" href="#' + item[0] + '">' + item[1] + '</a>'; }).join('') +
-      '</div></nav>';
+    h += '<div class="admin-screen-heading"><p class="eyebrow">Espace organisateur</p><h2 id="adminScreenTitle">Vue générale</h2><p class="lead" id="adminScreenSubtitle">Les indicateurs essentiels et l’activité du tournoi en un coup d’œil.</p></div>';
     h += '<section class="panel" id="admin-notifications"><h2>Notifications des participants</h2><p class="lead">Envoie une information dans l’espace personnel d’un participant ou à tous les participants inscrits.</p><form id="notificationForm" class="stack"><label>Destinataire</label><select name="playerId"><option value="all">Tous les participants</option>'+(A.players||[]).map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>';}).join('')+'</select><label>Titre</label><input name="title" maxlength="80" minlength="3" required><label>Message</label><textarea name="message" maxlength="300" minlength="3" required></textarea><button class="btn primary" type="submit"'+dis+'>Envoyer la notification</button></form><p class="hint">Les notifications restent disponibles même si le participant est déconnecté.</p></section>';
 
     /* centre de contrôle */
@@ -381,6 +365,16 @@
     if (e.target.id === 'live') draft.live = e.target.checked;
   });
   document.addEventListener('click', async function (e) {
+    var tab = e.target.closest('[data-admin-tab]');
+    if (tab) {
+      var nextScreen = tab.getAttribute('data-admin-tab');
+      if (nextScreen && nextScreen !== selectedAdminScreen) {
+        selectedAdminScreen = nextScreen;
+        applyAdminScreen();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      return;
+    }
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
     if (b.id === 'healthRefreshBtn') { healthCheckedAt = 0; load(); return; }
