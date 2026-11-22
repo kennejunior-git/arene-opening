@@ -32,7 +32,7 @@ const BUCKET = process.env.AUDIO_BUCKET || 'arene-audio';
 const s3 = new S3Client({ endpoint: process.env.AWS_ENDPOINT_URL_S3, region: process.env.AWS_REGION || 'eu-central-1', forcePathStyle: true, credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY } });
 if (!process.env.AWS_ENDPOINT_URL_S3 || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) { console.error('Configuration Neon Object Storage incomplète.'); process.exit(1); }
 let SECRET = process.env.SESSION_SECRET || '';
-const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, reactions: {}, uploads: {}, videoUploads: {}, bonuses: [], community: { comments: [], favorites: {} }, log: [] });
+const emptyState = () => ({ t: null, codes: [], entrants: {}, matches: {}, pairings: {}, votes: {}, reactions: {}, uploads: {}, videoUploads: {}, bonuses: [], notifications: {}, community: { comments: [], favorites: {} }, log: [] });
 let S = emptyState(), saveQueue = Promise.resolve(), pendingArchive = null;
 // Cache en mémoire des archives : évite de retransférer tous les JSONB à chaque visite communauté/admin.
 let archiveRowsCache = null;
@@ -52,6 +52,8 @@ function logIt(text) {
   S.log.push({ at: Date.now(), text: text });
   if (S.log.length > 500) S.log.shift();
 }
+function notifyPlayer(id,title,message,type){if(!id)return;S.notifications=S.notifications||{};const list=S.notifications[id]||(S.notifications[id]=[]);list.push({id:crypto.randomBytes(8).toString('hex'),title:clean(title,80),message:clean(message,300),type:type||'info',at:Date.now(),read:false});if(list.length>50)list.splice(0,list.length-50);}
+function notifyAllPlayers(title,message,type){S.codes.filter(c=>c.name).forEach(c=>notifyPlayer(c.id,title,message,type));}
 
 /* ---------- sessions signées ---------- */
 const sign = (v) => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
@@ -236,7 +238,8 @@ function publicState(vid) {
       videoUploads: S.videoUploads && S.videoUploads[vid] ? S.videoUploads[vid] : {},
       votes: S.votes[vid] || {},
       mobileMoney: c && c.mobileMoney ? c.mobileMoney : null,
-      prize: S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === vid) || null : null
+      prize: S.t && Array.isArray(S.t.prizePayouts) ? S.t.prizePayouts.find((p) => p.playerId === vid) || null : null,
+      notifications: (S.notifications && S.notifications[vid] || []).slice().reverse()
     };
   }
   return out;
@@ -536,6 +539,7 @@ const routes = {
   },
   'POST /api/logout': (req, res) => { setCookie(req, res, 'v', '', 0); return { ok: true }; },
   'GET /api/state': (req) => publicState(voterId(req)),
+  'POST /api/notifications/read': (req) => {const vid=voterId(req);if(!vid)fail(401,'Connecte-toi avec ton code joueur.');(S.notifications&&S.notifications[vid]||[]).forEach(n=>n.read=true);save();return {ok:true};},
   'GET /api/community': async (req) => { const u = new URL(req.url, 'http://x'); const id = String(u.searchParams.get('player') || ''); if (id && !/^[a-f0-9]{16}$/.test(id)) fail(400, 'Profil invalide.'); return communityData(id || null, voterId(req)); },
   'POST /api/community/favorite': (req, res, body) => {
     const vid = voterId(req);
@@ -815,10 +819,12 @@ const routes = {
     payout.status = 'envoye';
     payout.sentAt = Date.now();
     payout.reference = clean(body.reference, 80);
+    notifyPlayer(playerId,'Récompense envoyée','Ton paiement de '+payout.amount+' FCFA a été envoyé via '+(method==='MTN'?'MTN Mobile Money':'Orange Money')+'. Confirme sa réception dans ton espace.','prize');
     logIt('Récompense envoyée à ' + payout.playerName + ' (' + payout.amount + ' FCFA) via ' + (method === 'MTN' ? 'MTN Mobile Money' : 'Orange Money') + '. En attente de confirmation.');
     save();
     return { ok: true };
   },
+  'POST /api/admin/notification': (req,res,body) => {const title=clean(body.title,80),message=clean(body.message,300),target=String(body.playerId||'all');if(title.length<3||message.length<3)fail(400,'Indique un titre et un message de 3 caractères minimum.');if(target==='all')notifyAllPlayers(title,message,'announcement');else{const p=S.codes.find(c=>c.id===target&&c.name);if(!p)fail(404,'Participant introuvable.');notifyPlayer(p.id,title,message,'announcement');}logIt('Notification envoyée : '+title+'.');save();return {ok:true};},
   'POST /api/admin/codes': (req, res, body) => {
     const n = Math.floor(Number(body.count));
     if (!(n >= 1 && n <= 300)) fail(400, 'Choisis un nombre entre 1 et 300.');
@@ -880,6 +886,10 @@ const routes = {
       S.t.runnerUpId = runnerId || null;
       S.t.thirdPlaceId = thirdId || null;
       S.t.champion = { name: c.name, title: c.title, anime: c.anime, link: c.link };
+      notifyPlayer(championId,'Félicitations !','Tu remportes le tournoi « '+S.t.name+' ».','success');
+      if(runnerId)notifyPlayer(runnerId,'Résultat du tournoi','Tu termines à la 2e place du tournoi « '+S.t.name+' ».','result');
+      if(thirdId)notifyPlayer(thirdId,'Résultat du tournoi','Tu termines à la 3e place du tournoi « '+S.t.name+' ».','result');
+      notifyAllPlayers('Tournoi terminé','Le tournoi « '+S.t.name+' » est terminé. Consulte les résultats sur la plateforme.','result');
       createPrizePayouts();
       logIt('Tournoi terminé. Vainqueur : ' + c.name + '.');
     };
