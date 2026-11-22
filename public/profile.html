@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Arène des Openings</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-screen="profile">
+<main>
+  <header class="top" id="accueil">
+    <div class="topbar">
+      <p class="eyebrow">Tournoi d'openings · duels en binôme</p>
+      <nav class="site-nav" aria-label="Navigation principale"><a href="/" aria-current="page">Accueil</a><a href="/duels">Duels</a><a href="/stats">Classement</a><a href="/community">Communauté</a><a href="/profile">Profil</a></nav>
+    </div>
+    <div class="hero-title"><div><p class="eyebrow">La compétition commence ici</p><h1 id="ttl">Arène des Openings</h1><p class="hero-copy">Regarde les performances. Choisis ton favori. Fais entendre ta voix.</p></div><span class="hero-mark" aria-hidden="true">AO<span>✦</span></span></div>
+    <div class="stats" id="stats"></div><a class="profile-shortcut" href="/profile" aria-label="Ouvrir mon profil">◉ <span>Mon profil</span></a>
+  </header>
+  <section id="countdown" class="panel" hidden aria-live="polite"></section>
+  <section id="liveLeaderboard" class="panel" hidden aria-live="polite"></section>
+
+  <div id="notice" role="status"></div>
+  <section id="prizeAnnouncement" class="panel" hidden></section>
+  <section id="notifications" class="panel" hidden aria-live="polite"></section>
+  <section id="login" class="panel" hidden></section>
+  <section id="reg" class="panel" hidden></section>
+  <section id="champ" hidden></section>
+  <section id="duels" class="sec" aria-live="polite"></section>
+
+  <section id="rules" class="sec">
+    <h2>Règles du jeu</h2>
+    <ul class="rules">
+      <li><strong>Un code, un vote par affrontement.</strong> Chaque membre reçoit un code d'invitation personnel. Il peut voter une fois pour chacun des 3 affrontements (donc 3 votes par duel) et changer son choix jusqu'à la fin de chaque affrontement.</li>
+      <li><strong>Anonymat.</strong> Les openings sont présentés sans le nom de leur auteur. Les noms apparaissent quand le duel est terminé.</li>
+      <li><strong>Scores cachés.</strong> Sauf si l'organisateur active le score en direct pour un duel (c'est écrit dans le journal), personne ne voit le score avant la clôture.</li>
+      <li><strong>Durée et clôture automatique.</strong> Un duel dure <span data-cfg="voteMinutes">15 minutes</span>. À l'heure, le serveur compte les voix et publie le résultat. L'organisateur ne peut ni voter, ni modifier un vote, ni choisir un gagnant. Celui qui a le plus de voix gagne.</li>
+      <li><strong>Égalité.</strong> Si les deux openings ont autant de voix, <span data-cfg="extendMinutes">5 minutes</span> s'ajoutent automatiquement, autant de fois que nécessaire. Si l'égalité dure encore après plusieurs prolongations, le serveur tire le gagnant au sort et l'écrit dans le journal.</li>
+      <li><strong>Pseudos des votants.</strong> Quand un duel est terminé, la liste des pseudos des votants de chaque côté est affichée. Pendant le vote, on voit seulement le nombre de votes, jamais qui a voté.</li>
+      <li><strong>Pas de campagne.</strong> Demander des votes pour soi est interdit. Les participants ne votent pas dans leur propre duel.</li>
+    </ul>
+  </section>
+
+  <section id="journal" class="sec">
+    <h2>Journal public</h2>
+    <p class="lead">Chaque action de l'organisateur est écrite ici avec son heure : codes générés, tirage, ouverture et clôture des votes.</p>
+    <ul class="log" id="log"></ul>
+  </section>
+</main>
+<nav class="bottom-nav player-bottom-nav" aria-label="Navigation principale">
+  <a href="/" data-tab="home"><span class="nav-icon" aria-hidden="true">⌂</span><span>Accueil</span></a>
+  <a href="/duels" data-tab="duels"><span class="nav-icon" aria-hidden="true">⚔</span><span>Duels</span></a>
+  <a href="/stats" data-tab="ranking"><span class="nav-icon" aria-hidden="true">🏆</span><span>Classement</span></a>
+  <a href="/community" data-tab="community"><span class="nav-icon" aria-hidden="true">◎</span><span>Communauté</span></a>
+</nav><script src="/app.js"></script>
+</body>
+</html>
