@@ -538,3 +538,5 @@ body[data-screen="ranking"] .player-bottom-nav a[data-tab="ranking"],body[data-s
 
 .admin-bottom-nav{display:grid;position:sticky;top:8px;z-index:30;max-width:72rem;margin:12px auto;padding:8px;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid rgba(164,174,199,.22);border-radius:16px;background:rgba(13,21,39,.94);backdrop-filter:blur(16px)}
 @media(max-width:760px){.admin-bottom-nav{position:fixed;top:auto;left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));bottom:max(8px,env(safe-area-inset-bottom,0px));max-width:none;margin:0;padding:8px 6px calc(8px + env(safe-area-inset-bottom,0px))}}
+
+#adminBottomNav[hidden]{display:none!important}
