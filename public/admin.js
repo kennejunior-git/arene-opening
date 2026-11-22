@@ -154,6 +154,19 @@
       h += '<p><strong>' + esc(A.t.name) + '</strong> <span class="chip ' + (A.t.status === 'en_cours' ? 'ok' : '') + '">' + st + '</span></p>';
     }
     if (A.t && A.t.status === 'inscription') {
+      var countdownValue = '';
+      if (A.t.startAt) {
+        var countdownDate = new Date(Number(A.t.startAt));
+        countdownDate = new Date(countdownDate.getTime() - countdownDate.getTimezoneOffset() * 60000);
+        countdownValue = countdownDate.toISOString().slice(0,16);
+      }
+      h += '<section class="panel"><h2>Compte à rebours officiel</h2><p class="lead">' +
+        (A.t.startAt ? 'Lancement programmé : ' + esc(new Date(Number(A.t.startAt)).toLocaleString('fr-FR')) : 'Aucun lancement programmé pour le moment.') +
+        '</p><form id="countdownForm" class="stack"><label for="countdownStart">Date et heure de lancement (heure locale)</label>' +
+        '<input id="countdownStart" name="startAt" type="datetime-local" value="' + esc(countdownValue) + '">' +
+        '<button class="btn primary" type="submit"' + dis + '>Enregistrer le compte à rebours</button>' +
+        '<button class="btn small" id="clearCountdown" type="button"' + dis + '>Désactiver le compte à rebours</button></form>' +
+        '<p class="hint">Le compte à rebours ne lance pas automatiquement les votes. L’organisateur garde le contrôle du tournoi.</p></section>';
       var pc = A.prizeConfig || { enabled: false, amounts: {} }, pa = pc.amounts || {};
       h += '<section class="panel"><h2>Récompenses financières</h2><p class="lead">Annonce avant le tirage si le tournoi est doté. Les montants sont en FCFA. Les paiements seront effectués manuellement après le tournoi.</p>' +
         '<form id="prizeConfigForm" class="stack"><label class="check"><input type="checkbox" name="enabled"' + (pc.enabled ? ' checked' : '') + '> Ce tournoi comporte des récompenses</label>' +
@@ -366,6 +379,7 @@
       if (armed !== 'draw') { armed = 'draw'; render(); setTimeout(function () { if (armed === 'draw') { armed = null; render(); } }, 6000); }
       else run(function () { return api('/api/admin/draw', {}); }, 'Tirage au sort effectué.');
     } else if (a === 'open') { var mid = b.getAttribute('data-m'); run(function () { return api('/api/admin/open', { matchId: mid, live: draft.live }); }, 'Vote ouvert.'); }
+    else if (b.id === 'clearCountdown') run(function () { return api('/api/admin/countdown', { startAt: null }); }, 'Compte à rebours désactivé.');
     else if (a === 'openall') run(function () { return api('/api/admin/open', { live: draft.live }); }, 'Votes ouverts.');
     else if (a === 'next') run(function () { return api('/api/admin/next', {}); }, 'Tour suivant prêt.');
   });
@@ -377,6 +391,12 @@
       try { await api('/api/admin/login', { password: draft.password }); draft.password = ''; await load(); }
       catch (er) { err = er.message; render(true); }
     } else if (f === 'createForm') run(function () { return api('/api/admin/create', { name: draft.tname }); }, 'Tournoi créé.');
+    else if (f === 'countdownForm') {
+      var cf = new FormData(e.target), localValue = String(cf.get('startAt') || '');
+      if (!localValue) { err = 'Choisis une date et une heure.'; render(); return; }
+      var startAt = new Date(localValue).toISOString();
+      run(function () { return api('/api/admin/countdown', { startAt: startAt }); }, 'Compte à rebours programmé.');
+    }
     else if (f === 'codesForm') run(function () { return api('/api/admin/codes', { count: Number(draft.count) }); }, 'Codes générés.');
     else if (f === 'deleteUnstartedForm') {
       var df = new FormData(e.target);
