@@ -330,7 +330,7 @@
     var h = '<div class="opt s' + pos + (picked && mode === 'vote' ? ' picked' : '') + '">' +
       '<span class="badge" aria-hidden="true">' + pos + '</span><div class="obody">' +
       '<p class="otitle">' + esc(title) + '</p><p class="oanime">' + esc(anime) + '</p>' +
-      (video && video.file ? '<video class="media-video" controls preload="metadata" playsinline aria-label="Vidéo de l’affrontement" preload="none" src="/video/' + esc(video.file) + '"></video>' + mediaSpeedHTML() : '') +
+      (video && video.file ? '<video class="media-video" controls preload="none" playsinline aria-label="Vidéo de l’affrontement" src="/video/' + esc(video.file) + '"></video>' + mediaSpeedHTML() : '') +
       (side.audio ? '<audio class="media-audio" controls preload="metadata" aria-label="Écouter l’opening" src="/audio/' + esc(side.audio) + '"></audio>' + mediaSpeedHTML() : '') +
       '<p class="olink">' + (u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + (side.audio ? 'Ou écouter sur ' : 'Écouter sur ') + esc(hostOf(u)) + ' ↗</a>' : '') +
       (mine ? '<span class="tag">Ton opening</span>' : '') + '</p>' + reactionHTML(m, side) + '</div>';
@@ -531,8 +531,18 @@
       await api('/api/vote', { matchId: mid, slot: slot });
       var match = S.matches.find(function (m) { return m.id === mid; });
       var voteKey = match && match.encounters ? mid + ':e' + match.currentEncounter : mid;
-      if (S.me) { S.me.votes = S.me.votes || {}; S.me.votes[voteKey] = slot; }
-      await load();
+      if (S.me) {
+        S.me.votes = S.me.votes || {};
+        var previousSlot = S.me.votes[voteKey];
+        S.me.votes[voteKey] = slot;
+        if (match && match.liveTally) {
+          if (previousSlot === match.a.slot) match.liveTally.a = Math.max(0, match.liveTally.a - 1);
+          if (previousSlot === match.b.slot) match.liveTally.b = Math.max(0, match.liveTally.b - 1);
+          if (slot === match.a.slot) match.liveTally.a++;
+          if (slot === match.b.slot) match.liveTally.b++;
+        }
+        if (match && !previousSlot) match.votes = Number(match.votes || 0) + 1;
+      }
     } catch (e) { voteMsg = e.message || 'Ton vote n\'a pas pu être enregistré.'; }
     finally { voting = false; refreshDuelActions(); }
   }
@@ -543,8 +553,18 @@
     if(reactionPending[key])return;
     reactionPending[key]=true;button.disabled=true;
     try {
-      await api('/api/reaction',{matchId:mid,slot:slot,encounter:Number(button.getAttribute('data-e')),type:type});
-      await load();
+      var match = S.matches.find(function (m) { return m.id === mid; });
+      var sideKey = match && match.a.slot === slot ? 'a' : 'b';
+      var summary = match && match.reactions && match.reactions[sideKey];
+      var previousType = summary && summary.mine;
+      var result = await api('/api/reaction',{matchId:mid,slot:slot,encounter:Number(button.getAttribute('data-e')),type:type});
+      if (summary) {
+        summary.counts = summary.counts || {};
+        if (previousType) summary.counts[previousType] = Math.max(0, Number(summary.counts[previousType] || 0) - 1);
+        if (result.mine) summary.counts[result.mine] = Number(summary.counts[result.mine] || 0) + 1;
+        summary.mine = result.mine || null;
+        summary.total = Number(result.total || 0);
+      }
     } catch(e) { voteMsg=e.message||'Réaction impossible.'; }
     finally { delete reactionPending[key]; refreshDuelActions(); }
   }
