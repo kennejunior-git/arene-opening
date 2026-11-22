@@ -44,6 +44,23 @@
     render(true);
   }
 
+  function applyAdminScreen() {
+    var groups = {
+      overview: ['admin-centre','admin-dashboard'],
+      tournament: ['admin-tournoi','admin-deroulement','admin-bonus','admin-nouveau','admin-suppression'],
+      participants: ['admin-codes','admin-moderation','admin-notifications'],
+      system: ['admin-surveillance','admin-stockage']
+    };
+    var allowed = groups[selectedAdminScreen] || groups.overview;
+    document.querySelectorAll('#app section[id^="admin-"]').forEach(function (section) {
+      section.hidden = allowed.indexOf(section.id) === -1;
+    });
+    document.querySelectorAll('[data-admin-tab]').forEach(function (button) {
+      var active = button.getAttribute('data-admin-tab') === selectedAdminScreen;
+      button.setAttribute('aria-current', active ? 'page' : 'false');
+    });
+  }
+
   function render(force) {
     var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, health, healthErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
@@ -60,23 +77,6 @@
     }
     var dis = busy ? ' disabled' : '';
     var h = '';
-    var nav = [
-      ['admin-tournoi', 'Tournoi'],
-      ['admin-notifications', 'Notifications'],
-      ['admin-centre', 'Centre de contrôle'],
-      ['admin-surveillance', 'Surveillance technique'],
-      ['admin-dashboard', 'Tableau de bord'],
-      ['admin-moderation', 'Modération vidéos'],
-      ['admin-codes', 'Codes d’invitation'],
-      ['admin-deroulement', 'Déroulement'],
-      ['admin-bonus', 'Bonus et pénalités'],
-      ['admin-stockage', 'Stockage archives']
-    ];
-    if (A.t && A.t.status === 'inscription' && Object.keys(A.matches || {}).length === 0) nav.push(['admin-suppression', 'Supprimer tournoi']);
-    if (A.t) nav.push(['admin-nouveau', 'Nouveau tournoi']);
-    h += '<nav class="panel admin-nav" aria-label="Navigation organisateur"><h2>Navigation rapide</h2><div class="admin-nav-links">' +
-      nav.map(function (item) { return '<a class="chip" href="#' + item[0] + '">' + item[1] + '</a>'; }).join('') +
-      '</div></nav>';
     h += '<section class="panel" id="admin-notifications"><h2>Notifications des participants</h2><p class="lead">Envoie une information dans l’espace personnel d’un participant ou à tous les participants inscrits.</p><form id="notificationForm" class="stack"><label>Destinataire</label><select name="playerId"><option value="all">Tous les participants</option>'+(A.players||[]).map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>';}).join('')+'</select><label>Titre</label><input name="title" maxlength="80" minlength="3" required><label>Message</label><textarea name="message" maxlength="300" minlength="3" required></textarea><button class="btn primary" type="submit"'+dis+'>Envoyer la notification</button></form><p class="hint">Les notifications restent disponibles même si le participant est déconnecté.</p></section>';
 
     /* centre de contrôle */
@@ -338,6 +338,7 @@
         '<button class="btn small" type="submit"' + dis + '>Archiver et recommencer</button></form></section>';
     }
     el.innerHTML = h;
+    applyAdminScreen();
   }
 
   async function run(fn, okMsg) {
@@ -363,7 +364,9 @@
   });
   document.addEventListener('click', async function (e) {
     var b = e.target.closest('button');
-    if (!b || b.disabled) return;
+    if (!b) return;
+    if (b.hasAttribute('data-admin-tab')) { selectedAdminScreen = b.getAttribute('data-admin-tab'); applyAdminScreen(); return; }
+    if (b.disabled) return;
     if (b.id === 'healthRefreshBtn') { healthCheckedAt = 0; load(); return; }
     var a = b.getAttribute('data-act');
     if (b.id === 'logout') { await api('/api/admin/logout', {}); authed = false; A = null; render(true); }
