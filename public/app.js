@@ -95,11 +95,39 @@
   }
   async function load() {
     try {
-      S = await api('/api/state');
+      var nextState = await api('/api/state');
+      syncBrowserNotifications(nextState);
+      S = nextState;
       offset = S.now - Date.now();
       loadErr = '';
     } catch (e) { loadErr = 'Impossible de joindre le serveur. Nouvel essai en cours…'; }
     renderAll();
+  }
+
+  var knownNotificationIds = null;
+  function syncBrowserNotifications(state) {
+    var list = state && state.me && state.me.notifications || [];
+    var current = new Set(list.map(function (n) { return String(n.id); }));
+    if (knownNotificationIds === null) { knownNotificationIds = current; return; }
+    var fresh = list.filter(function (n) { return !knownNotificationIds.has(String(n.id)); });
+    knownNotificationIds = current;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    fresh.forEach(function (item) {
+      try {
+        var notice = new Notification(String(item.title || 'Arène des Openings'), {
+          body: String(item.message || 'Tu as reçu une nouvelle notification.'),
+          tag: 'arene-' + String(item.id),
+          icon: '/favicon.ico'
+        });
+        notice.onclick = function () { window.focus(); notice.close(); };
+      } catch (e) { /* Les notifications système peuvent être bloquées par le navigateur. */ }
+    });
+  }
+  function browserNotificationControl() {
+    if (typeof Notification === 'undefined') return '<p class="hint">Les alertes système ne sont pas prises en charge par ce navigateur.</p>';
+    if (Notification.permission === 'granted') return '<p class="hint">Les alertes sont activées sur cet appareil.</p>';
+    if (Notification.permission === 'denied') return '<p class="hint">Les alertes sont bloquées par le navigateur. Modifie l’autorisation du site dans les paramètres du navigateur.</p>';
+    return '<button class="btn small" id="enableBrowserNotifications" type="button">Activer les alertes sur cet appareil</button>';
   }
 
   /* ---------- rendu ---------- */
@@ -389,7 +417,7 @@
       (Number(a.second || 0) > 0 ? '<li>2e place : <strong>' + Number(a.second).toLocaleString('fr-FR') + ' FCFA</strong></li>' : '') +
       (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
   }
-  function renderNotifications(){var el=$('notifications');if(!el)return;var list=S&&S.me&&S.me.notifications||[];el.hidden=!S||!S.me||!S.me.name;if(el.hidden)return;var unread=list.filter(n=>!n.read).length;el.innerHTML='<div class="row"><h2>Mes notifications'+(unread?' · '+unread+' nouvelle(s)':'')+'</h2>'+(unread?'<button class="btn small" id="readNotifications">Tout marquer comme lu</button>':'')+'</div>'+(list.length?'<ul class="log">'+list.slice(0,20).map(n=>'<li><strong>'+esc(n.title)+'</strong><span>'+esc(n.message)+'</span><small>'+fmtDate(n.at)+(n.read?' · Lu':' · Nouveau')+'</small></li>').join('')+'</ul>':'<p class="note">Tu n’as pas encore de notification.</p>');}
+  function renderNotifications(){var el=$('notifications');if(!el)return;var list=S&&S.me&&S.me.notifications||[];el.hidden=!S||!S.me||!S.me.name;if(el.hidden)return;var unread=list.filter(n=>!n.read).length;el.innerHTML='<div class="row"><h2>Mes notifications'+(unread?' · '+unread+' nouvelle(s)':'')+'</h2>'+(unread?'<button class="btn small" id="readNotifications">Tout marquer comme lu</button>':'')+'</div><div class="row">'+browserNotificationControl()+'</div>'+(list.length?'<ul class="log">'+list.slice(0,20).map(n=>'<li><strong>'+esc(n.title)+'</strong><span>'+esc(n.message)+'</span><small>'+fmtDate(n.at)+(n.read?' · Lu':' · Nouveau')+'</small></li>').join('')+'</ul>':'<p class="note">Tu n’as pas encore de notification.</p>');}
   function renderAll() { renderRules(); renderHead(); renderNotice(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
@@ -418,6 +446,10 @@
     if (b.classList.contains('reaction-btn')) sendReaction(b);
     else if (b.hasAttribute('data-prize-confirm')) {
       api('/api/prize/confirm', { received: b.getAttribute('data-prize-confirm') === 'yes' }).then(load).catch(function (er) { loginErr = er.message; lastLoginKey = ''; load(); });
+    } else if (b.id === 'enableBrowserNotifications') {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        Notification.requestPermission().then(function () { renderNotifications(); });
+      }
     } else if (b.id === 'readNotifications') api('/api/notifications/read', {}).then(load).catch(function(){});
     else if (b.classList.contains('vote')) castVote(b.getAttribute('data-m'), b.getAttribute('data-s'));
     else if (b.id === 'logoutBtn') api('/api/logout', {}).then(function () { lastLoginKey = ''; lastRegKey = ''; return load(); });
