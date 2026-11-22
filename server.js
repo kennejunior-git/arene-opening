@@ -9,7 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { Pool } = require('pg');
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, HeadBucketCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { pipeline, Transform } = require('node:stream');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -613,6 +613,42 @@ const routes = {
   },
   'POST /api/admin/logout': (req, res) => { setCookie(req, res, 'a', '', 0); return { ok: true }; },
   'GET /api/admin/storage': async () => ({ archives: await archivedStorage() }),
+  'GET /api/admin/health': async () => {
+    const checkedAt = Date.now();
+    const result = {
+      checkedAt,
+      server: { status: 'ok', uptimeSeconds: Math.floor(process.uptime()), node: process.version, memoryRssBytes: process.memoryUsage().rss, memoryHeapUsedBytes: process.memoryUsage().heapUsed },
+      database: { status: 'error', latencyMs: null },
+      objectStorage: { status: 'error', latencyMs: null, bucket: BUCKET },
+      media: { activeVideoBytes: 0, archivedMediaBytes: 0 }
+    };
+    const dbStart = Date.now();
+    try {
+      await pool.query('SELECT 1');
+      result.database = { status: 'ok', latencyMs: Date.now() - dbStart };
+    } catch (e) {
+      result.database.error = 'Connexion à la base de données indisponible.';
+      console.error('Diagnostic base de données:', e.message);
+    }
+    const storageStart = Date.now();
+    try {
+      await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+      result.objectStorage = { status: 'ok', latencyMs: Date.now() - storageStart };
+    } catch (e) {
+      result.objectStorage = { status: 'error', latencyMs: Date.now() - storageStart, error: 'Accès au bucket de stockage indisponible.' };
+      console.error('Diagnostic stockage objet:', e.message);
+    }
+    try {
+      const videos = await adminVideoList();
+      result.media.activeVideoBytes = videos.reduce((n, v) => n + Number(v.size || 0), 0);
+      const archives = await archivedStorage();
+      result.media.archivedMediaBytes = archives.reduce((n, a) => n + Number(a.bytes || 0), 0);
+    } catch (e) {
+      result.media.status = 'partial';
+      console.error('Diagnostic volume médias:', e.message);
+    }
+    return result;
+  },
   'POST /api/admin/storage/cleanup': async (req, res, body) => {
     const id = Number(body.archiveId);
     if (!Number.isSafeInteger(id) || id < 1) fail(400, 'Archive invalide.');
