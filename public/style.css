@@ -450,3 +450,15 @@ button:disabled { cursor:not-allowed; }
   :root { scroll-behavior:auto; }
   *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
 }
+
+/* Navigation rapide de l'espace organisateur */
+.admin-nav { position:sticky; top:8px; z-index:30; background:rgba(18,29,51,.96); backdrop-filter:blur(14px); }
+.admin-nav h2 { margin:0 0 12px; font-size:1rem; }
+.admin-nav-links { display:flex; flex-wrap:wrap; gap:8px; }
+.admin-nav-links .chip { display:inline-flex; align-items:center; text-decoration:none; padding:9px 13px; border:1px solid var(--line, #34435f); border-radius:999px; white-space:nowrap; }
+html { scroll-behavior:smooth; scroll-padding-top:100px; }
+@media (max-width:680px) {
+  .admin-nav { top:4px; }
+  .admin-nav-links { flex-wrap:nowrap; overflow-x:auto; padding-bottom:5px; scrollbar-width:thin; }
+  .admin-nav-links .chip { flex:0 0 auto; font-size:12px; }
+}
