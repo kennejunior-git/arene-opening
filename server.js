@@ -9,7 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { Pool } = require('pg');
-const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, HeadBucketCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, HeadBucketCommand, DeleteObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, ListPartsCommand, CompleteMultipartUploadCommand } = require('@aws-sdk/client-s3');
 const { pipeline, Transform } = require('node:stream');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -292,6 +292,74 @@ function inspectMp4Video(buf) {
   return hasVideo ? duration / timescale : null;
 }
 function unlinkVideo(file) { if (/^[a-f0-9]{24}\.mp4$/.test(String(file))) s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:file})).catch(e=>console.error('Suppression vidéo:',e.message)); }
+
+const VIDEO_PART_SIZE = 5 * 1024 * 1024;
+function videoMultipartKey(vid, session) {
+  return 'video-parts/' + crypto.createHash('sha256').update(String(vid)).digest('hex').slice(0,24) + '/' + session + '.mp4';
+}
+async function videoMultipartInit(req,res,slot,body) {
+  const vid=voterId(req);
+  if(!vid)return sendJson(res,401,{error:"Entre ton code d'invitation d'abord."});
+  if(!S.t||S.t.status!=='inscription')return sendJson(res,409,{error:'Les inscriptions sont fermées.'});
+  const size=Number(body.size),session=String(body.session||'');
+  if(!Number.isSafeInteger(size)||size<2048||size>MAX_VIDEO)return sendJson(res,413,{error:'Vidéo invalide ou supérieure à 60 Mo.'});
+  if(!/^[a-f0-9]{32}$/.test(session))return sendJson(res,400,{error:'Session vidéo invalide.'});
+  const key=videoMultipartKey(vid,session);
+  try {
+    if(body.uploadId) {
+      const old=await s3.send(new ListPartsCommand({Bucket:BUCKET,Key:key,UploadId:String(body.uploadId),MaxParts:1000}));
+      return sendJson(res,200,{uploadId:String(body.uploadId),parts:(old.Parts||[]).map(p=>p.PartNumber)});
+    }
+  } catch(e) { console.warn('Reprise vidéo: ancienne session expirée.'); }
+  try {
+    const created=await s3.send(new CreateMultipartUploadCommand({Bucket:BUCKET,Key:key,ContentType:'video/mp4'}));
+    return sendJson(res,200,{uploadId:created.UploadId,parts:[]});
+  } catch(e) { console.error('Initialisation multipart:',e); return sendJson(res,502,{error:'Impossible de préparer l’envoi vidéo.'}); }
+}
+async function videoMultipartPart(req,res,slot,session,part) {
+  const vid=voterId(req);
+  if(!vid)return sendJson(res,401,{error:"Entre ton code d'invitation d'abord."});
+  if(!S.t||S.t.status!=='inscription')return sendJson(res,409,{error:'Les inscriptions sont fermées.'});
+  const uploadId=String(req.headers['x-upload-id']||'');
+  if(!uploadId||part<1||part>20)return sendJson(res,400,{error:'Bloc vidéo invalide.'});
+  const chunks=[];let size=0;
+  try {
+    for await(const c of req){size+=c.length;if(size>VIDEO_PART_SIZE){req.destroy();return;}chunks.push(c);}
+    if(!size)return sendJson(res,400,{error:'Bloc vidéo vide.'});
+    const r=await s3.send(new UploadPartCommand({Bucket:BUCKET,Key:videoMultipartKey(vid,session),UploadId:uploadId,PartNumber:part,Body:Buffer.concat(chunks),ContentLength:size}));
+    return sendJson(res,200,{ok:true,part,etag:r.ETag});
+  } catch(e){console.error('Bloc vidéo:',e.message);if(!res.headersSent)return sendJson(res,502,{error:'Bloc non reçu. Nouvelle tentative possible.'});}
+}
+async function videoMultipartComplete(req,res,slot,session,body) {
+  const vid=voterId(req);
+  if(!vid)return sendJson(res,401,{error:"Entre ton code d'invitation d'abord."});
+  if(!S.t||S.t.status!=='inscription')return sendJson(res,409,{error:'Les inscriptions sont fermées.'});
+  const size=Number(body.size),uploadId=String(body.uploadId||'');
+  if(!Number.isSafeInteger(size)||size<2048||size>MAX_VIDEO||!uploadId)return sendJson(res,400,{error:'Informations de finalisation invalides.'});
+  const key=videoMultipartKey(vid,session);
+  try {
+    const l=await s3.send(new ListPartsCommand({Bucket:BUCKET,Key:key,UploadId:uploadId,MaxParts:1000}));
+    const parts=(l.Parts||[]).sort((a,b)=>a.PartNumber-b.PartNumber),expected=Math.ceil(size/VIDEO_PART_SIZE);
+    if(parts.length!==expected||parts.some((p,i)=>p.PartNumber!==i+1))return sendJson(res,409,{error:'Des blocs manquent. Réessaie pour reprendre l’envoi.'});
+    await s3.send(new CompleteMultipartUploadCommand({Bucket:BUCKET,Key:key,UploadId:uploadId,MultipartUpload:{Parts:parts.map(p=>({ETag:p.ETag,PartNumber:p.PartNumber}))}}));
+    const obj=await s3.send(new GetObjectCommand({Bucket:BUCKET,Key:key}));
+    const bytes=Buffer.from(await obj.Body.transformToByteArray()),duration=inspectMp4Video(bytes);
+    if(bytes.length!==size||!duration||duration>MAX_VIDEO_SECONDS+0.05){
+      await s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:key})).catch(()=>{});
+      return sendJson(res,415,{error:!duration?'Fichier MP4/MOV invalide ou sans piste vidéo.':'La vidéo dépasse 2 minutes.'});
+    }
+    const file=crypto.randomBytes(12).toString('hex')+'.mp4';
+    await s3.send(new PutObjectCommand({Bucket:BUCKET,Key:file,Body:bytes,ContentType:'video/mp4'}));
+    await s3.send(new DeleteObjectCommand({Bucket:BUCKET,Key:key})).catch(()=>{});
+    S.videoUploads=S.videoUploads||{};S.videoUploads[vid]=S.videoUploads[vid]||{};
+    if(S.videoUploads[vid][slot])unlinkVideo(S.videoUploads[vid][slot].file);
+    const old=S.entrants[vid]&&S.entrants[vid].videos&&S.entrants[vid].videos[slot-1];
+    if(old&&old.file&&(!S.videoUploads[vid][slot]||old.file!==S.videoUploads[vid][slot].file))unlinkVideo(old.file);
+    S.videoUploads[vid][slot]={file,size,duration};await save();
+    return sendJson(res,200,{ok:true,file,duration});
+  } catch(e){console.error('Finalisation vidéo:',e);if(!res.headersSent)return sendJson(res,502,{error:'Finalisation impossible. Réessaie sans renvoyer les blocs déjà reçus.'});}
+}
+
 function handleVideoUpload(req, res, slot) {
   const vid = voterId(req);
   if (!vid) return sendJson(res, 401, { error: "Entre ton code d'invitation d'abord." });
@@ -1069,6 +1137,12 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const key = req.method + ' ' + url.pathname;
     if (key === 'POST /api/audio') return handleUpload(req, res);
+    let vr=/^\/api\/video\/chunk\/init\/([123])$/.exec(url.pathname);
+    if(req.method==='POST'&&vr)return videoMultipartInit(req,res,Number(vr[1]),await readBody(req));
+    vr=/^\/api\/video\/chunk\/part\/([123])\/([a-f0-9]{32})\/([0-9]{1,2})$/.exec(url.pathname);
+    if(req.method==='POST'&&vr)return videoMultipartPart(req,res,Number(vr[1]),vr[2],Number(vr[3]));
+    vr=/^\/api\/video\/chunk\/complete\/([123])\/([a-f0-9]{32})$/.exec(url.pathname);
+    if(req.method==='POST'&&vr)return videoMultipartComplete(req,res,Number(vr[1]),vr[2],await readBody(req));
     const videoUpload = /^\/api\/video\/([123])$/.exec(url.pathname);
     if (req.method === 'POST' && videoUpload) return handleVideoUpload(req, res, Number(videoUpload[1]));
     const am = /^\/audio\/([a-f0-9]{24}\.(?:mp3|m4a|ogg|wav|webm|flac|aac))$/.exec(url.pathname);
