@@ -646,7 +646,7 @@ const routes = {
   'GET /api/admin/state': async () => {
     const st = publicState(null);
     st.admin = true;
-    st.codes = S.codes.map((c) => ({ code: fmtCode(c.code), used: !!c.usedAt }));
+    st.codes = S.codes.map((c) => ({ code: fmtCode(c.code), used: !!c.usedAt, name: c.name || null }));
     st.entrantCount = Object.keys(S.entrants).length;
     st.moderationVideos = await adminVideoList();
     st.stats.videoCount = st.moderationVideos.length;
