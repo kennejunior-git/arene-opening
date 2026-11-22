@@ -55,6 +55,7 @@
     var h = '';
     var nav = [
       ['admin-tournoi', 'Tournoi'],
+      ['admin-centre', 'Centre de contrôle'],
       ['admin-dashboard', 'Tableau de bord'],
       ['admin-moderation', 'Modération vidéos'],
       ['admin-codes', 'Codes d’invitation'],
@@ -67,6 +68,39 @@
     h += '<nav class="panel admin-nav" aria-label="Navigation organisateur"><h2>Navigation rapide</h2><div class="admin-nav-links">' +
       nav.map(function (item) { return '<a class="chip" href="#' + item[0] + '">' + item[1] + '</a>'; }).join('') +
       '</div></nav>';
+
+    /* centre de contrôle */
+    var overviewMatches = Array.isArray(A.matches) ? A.matches : [];
+    var overviewVideos = A.moderationVideos || [];
+    var openMatches = overviewMatches.filter(function (m) { return m.status === 'ouvert'; }).length;
+    var pendingMatches = overviewMatches.filter(function (m) { return m.status === 'attente'; }).length;
+    var closedMatches = overviewMatches.filter(function (m) { return m.status === 'clos'; }).length;
+    var countedVotes = overviewMatches.reduce(function (n, m) {
+      return n + (m.status === 'clos' ? Number(m.tally && m.tally.total || 0) : (m.status === 'ouvert' ? Number(m.votes || 0) : 0));
+    }, 0);
+    var tournamentStatus = !A.t ? 'Aucun tournoi créé' : ({
+      inscription: 'Inscriptions ouvertes',
+      en_cours: 'Tournoi en cours',
+      termine: 'Tournoi terminé'
+    }[A.t.status] || 'État inconnu');
+    h += '<section class="panel" id="admin-centre"><h2>Centre de contrôle</h2>' +
+      '<p class="lead">' + (A.t ? '<strong>' + esc(A.t.name) + '</strong> · ' + tournamentStatus : 'Crée un tournoi pour commencer à suivre son activité ici.') + '</p>' +
+      '<div class="profile-stats">' +
+      '<div><strong>' + Number(A.entrantCount || 0) + '</strong><span>Participants inscrits</span></div>' +
+      '<div><strong>' + overviewVideos.length + '</strong><span>Fichiers vidéo détectés</span></div>' +
+      '<div><strong>' + closedMatches + '</strong><span>Duels terminés</span></div>' +
+      '<div><strong>' + openMatches + '</strong><span>Votes actuellement ouverts</span></div>' +
+      '<div><strong>' + pendingMatches + '</strong><span>Duels en attente</span></div>' +
+      '<div><strong>' + countedVotes + '</strong><span>Votes comptabilisés</span></div>' +
+      '</div>' +
+      '<p class="note">' + (A.t && A.t.status === 'inscription'
+        ? 'Les inscriptions sont ouvertes. Repère vidéo : 3 vidéos par participant. Les fichiers détectés incluent aussi les dépôts en cours.'
+        : A.t && A.t.status === 'en_cours'
+          ? 'Le tournoi a commencé. Les votes ouverts et les duels en attente sont actualisés automatiquement.'
+          : A.t && A.t.status === 'termine'
+            ? 'Le tournoi est terminé. Les résultats et les votes restent consultables dans les sections ci-dessous.'
+            : 'Les statistiques apparaîtront dès la création du prochain tournoi.') + '</p>' +
+      '</section>';
 
     /* tournoi */
     h += '<section class="panel" id="admin-tournoi"><h2>Tournoi</h2>';
