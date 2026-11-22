@@ -528,3 +528,11 @@ body[data-screen="profile"] #countdown,body[data-screen="profile"] #liveLeaderbo
 body[data-screen="profile"] #login,body[data-screen="profile"] #notifications,body[data-screen="profile"] #reg,body[data-screen="profile"] #prizeAnnouncement{display:block!important}
 body[data-screen="ranking"] .player-bottom-nav a[data-tab="ranking"],body[data-screen="community"] .player-bottom-nav a[data-tab="community"],body[data-screen="home"] .player-bottom-nav a[data-tab="home"],body[data-screen="duels"] .player-bottom-nav a[data-tab="duels"]{background:#293650;color:#fff}
 @media(max-width:760px){.profile-shortcut{display:none}.bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* Navigation organisateur en quatre écrans */
+.admin-bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+.admin-bottom-nav button{min-width:0;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;border-radius:12px;background:transparent;color:#aebbd4;font:600 10px var(--body);cursor:pointer}
+.admin-bottom-nav button[aria-current="page"]{background:#293650;color:#fff}
+.admin-bottom-nav .nav-icon{font:700 19px/1 var(--body)}
+#app section[hidden]{display:none!important}
+@media(max-width:760px){body[data-screen="duels"] .profile-shortcut{display:inline-flex!important}}
