@@ -517,3 +517,14 @@ html { scroll-behavior: smooth; scroll-padding-top: 18px; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior:auto; }
 }
+
+
+/* Navigation par écrans dédiés */
+.profile-shortcut{display:inline-flex;align-items:center;gap:8px;width:max-content;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:#17233a;color:#e7eaff;text-decoration:none;font-weight:700}
+.bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+body[data-screen="home"] #login,body[data-screen="home"] #notifications,body[data-screen="home"] #reg,body[data-screen="home"] #duels{display:none!important}
+body[data-screen="duels"] #countdown,body[data-screen="duels"] #liveLeaderboard,body[data-screen="duels"] #prizeAnnouncement,body[data-screen="duels"] #login,body[data-screen="duels"] #notifications,body[data-screen="duels"] #reg,body[data-screen="duels"] #champ,body[data-screen="duels"] #rules,body[data-screen="duels"] #journal{display:none!important}
+body[data-screen="profile"] #countdown,body[data-screen="profile"] #liveLeaderboard,body[data-screen="profile"] #champ,body[data-screen="profile"] #duels,body[data-screen="profile"] #rules,body[data-screen="profile"] #journal{display:none!important}
+body[data-screen="profile"] #login,body[data-screen="profile"] #notifications,body[data-screen="profile"] #reg,body[data-screen="profile"] #prizeAnnouncement{display:block!important}
+body[data-screen="ranking"] .player-bottom-nav a[data-tab="ranking"],body[data-screen="community"] .player-bottom-nav a[data-tab="community"],body[data-screen="home"] .player-bottom-nav a[data-tab="home"],body[data-screen="duels"] .player-bottom-nav a[data-tab="duels"]{background:#293650;color:#fff}
+@media(max-width:760px){.profile-shortcut{display:none}.bottom-nav{grid-template-columns:repeat(4,minmax(0,1fr))}}
