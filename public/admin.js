@@ -6,7 +6,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  var A = null, storage = { archives: [] }, storageErr = '', authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
+  var A = null, storage = { archives: [] }, health = null, healthErr = '', healthCheckedAt = 0, storageErr = '', authed = false, busy = false, err = '', info = '', armed = null, lastKey = '', lastExp = -1;
   var draft = { password: '', tname: '', count: '20', confirm: '', live: false };
 
   function fmtDate(ms) {
@@ -34,12 +34,18 @@
   async function load() {
     try { A = await api('/api/admin/state'); fetchedAt = Date.now(); authed = true; }
     catch (e) { if (e.status === 401) { authed = false; A = null; } else { err = 'Impossible de joindre le serveur.'; } }
-    if (authed) { try { storage = await api('/api/admin/storage'); storageErr = ''; } catch (e) { storageErr = e.message || 'Stockage indisponible.'; } }
+    if (authed) {
+      try { storage = await api('/api/admin/storage'); storageErr = ''; } catch (e) { storageErr = e.message || 'Stockage indisponible.'; }
+      if (!health || Date.now() - healthCheckedAt > 30000) {
+        try { health = await api('/api/admin/health'); healthErr = ''; healthCheckedAt = Date.now(); }
+        catch (e) { health = null; healthErr = e.message || 'Diagnostic indisponible.'; }
+      }
+    } else { health = null; healthErr = ''; healthCheckedAt = 0; }
     render(true);
   }
 
   function render(force) {
-    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
+    var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, health, healthErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
     lastKey = key;
@@ -56,6 +62,7 @@
     var nav = [
       ['admin-tournoi', 'Tournoi'],
       ['admin-centre', 'Centre de contrôle'],
+      ['admin-surveillance', 'Surveillance technique'],
       ['admin-dashboard', 'Tableau de bord'],
       ['admin-moderation', 'Modération vidéos'],
       ['admin-codes', 'Codes d’invitation'],
@@ -101,6 +108,38 @@
             ? 'Le tournoi est terminé. Les résultats et les votes restent consultables dans les sections ci-dessous.'
             : 'Les statistiques apparaîtront dès la création du prochain tournoi.') + '</p>' +
       '</section>';
+
+    /* surveillance technique */
+    function healthLabel(status) {
+      return status === 'ok' ? 'Opérationnel' : status === 'error' ? 'Indisponible' : 'À vérifier';
+    }
+    function healthChip(status) {
+      return '<span class="chip ' + (status === 'ok' ? 'ok' : status === 'error' ? 'danger' : '') + '">' + healthLabel(status) + '</span>';
+    }
+    var rssMb = health ? (health.server.memoryRssBytes / 1048576).toFixed(0) : '—';
+    var heapMb = health ? (health.server.memoryHeapUsedBytes / 1048576).toFixed(0) : '—';
+    var mediaMb = health ? ((health.media.activeVideoBytes + health.media.archivedMediaBytes) / 1048576).toFixed(1) : '—';
+    var uptimeHours = health ? Math.floor(health.server.uptimeSeconds / 3600) : 0;
+    var uptimeLabel = health ? (Math.floor(uptimeHours / 24) + ' j ' + (uptimeHours % 24) + ' h') : '—';
+    h += '<section class="panel" id="admin-surveillance"><h2>Surveillance technique</h2>' +
+      '<p class="lead">État réel des services utilisés par la plateforme. Les vérifications sont relancées automatiquement environ toutes les 30 secondes.</p>';
+    if (health) {
+      h += '<div class="profile-stats">' +
+        '<div><strong>' + healthChip(health.server.status) + '</strong><span>Serveur applicatif · actif depuis ' + uptimeLabel + '</span></div>' +
+        '<div><strong>' + healthChip(health.database.status) + '</strong><span>Base Neon' + (health.database.latencyMs == null ? '' : ' · ' + health.database.latencyMs + ' ms') + '</span></div>' +
+        '<div><strong>' + healthChip(health.objectStorage.status) + '</strong><span>Stockage vidéo' + (health.objectStorage.latencyMs == null ? '' : ' · ' + health.objectStorage.latencyMs + ' ms') + '</span></div>' +
+        '<div><strong>' + rssMb + ' Mo</strong><span>Mémoire RAM utilisée (RSS)</span></div>' +
+        '<div><strong>' + heapMb + ' Mo</strong><span>Mémoire JavaScript utilisée</span></div>' +
+        '<div><strong>' + mediaMb + ' Mo</strong><span>Médias actifs + archives mesurés</span></div>' +
+        '</div>' +
+        '<p class="note">Dernière vérification : ' + fmtDate(health.checkedAt) + ' · Node ' + esc(health.server.node) + '</p>' +
+        '<p class="hint">Le volume affiché additionne les vidéos actives et les médias d’archives mesurables. Ce n’est pas le quota total du compte Neon : le quota disponible n’est pas exposé par cette vérification.</p>';
+      if (health.database.status === 'error') h += '<p class="err">La base de données ne répond pas correctement. Évite les opérations sensibles tant que le service n’est pas rétabli.</p>';
+      if (health.objectStorage.status === 'error') h += '<p class="err">Le stockage vidéo ne répond pas. Les dépôts et lectures de médias peuvent échouer.</p>';
+    } else {
+      h += '<p class="' + (healthErr ? 'err' : 'note') + '">' + esc(healthErr || 'Diagnostic en cours…') + '</p>';
+    }
+    h += '<button class="btn small" id="healthRefreshBtn" type="button"' + dis + '>Actualiser le diagnostic</button></section>';
 
     /* tournoi */
     h += '<section class="panel" id="admin-tournoi"><h2>Tournoi</h2>';
@@ -309,6 +348,7 @@
   document.addEventListener('click', async function (e) {
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
+    if (b.id === 'healthRefreshBtn') { healthCheckedAt = 0; load(); return; }
     var a = b.getAttribute('data-act');
     if (b.id === 'logout') { await api('/api/admin/logout', {}); authed = false; A = null; render(true); }
     else if (b.id === 'copyBtn') {
@@ -350,6 +390,7 @@
   });
 
   setInterval(function () { if (authed && !busy) load(); }, 10000);
+  setInterval(function () { if (authed && !busy) { healthCheckedAt = 0; load(); } }, 30000);
   setInterval(function () {
     if (!A) return;
     document.querySelectorAll('[data-closes]').forEach(function (sp) {
