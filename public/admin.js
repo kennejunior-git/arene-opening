@@ -53,9 +53,23 @@
     }
     var dis = busy ? ' disabled' : '';
     var h = '';
+    var nav = [
+      ['admin-tournoi', 'Tournoi'],
+      ['admin-dashboard', 'Tableau de bord'],
+      ['admin-moderation', 'Modération vidéos'],
+      ['admin-codes', 'Codes d’invitation'],
+      ['admin-deroulement', 'Déroulement'],
+      ['admin-bonus', 'Bonus et pénalités'],
+      ['admin-stockage', 'Stockage archives']
+    ];
+    if (A.t && A.t.status === 'inscription' && Object.keys(A.matches || {}).length === 0) nav.push(['admin-suppression', 'Supprimer tournoi']);
+    if (A.t) nav.push(['admin-nouveau', 'Nouveau tournoi']);
+    h += '<nav class="panel admin-nav" aria-label="Navigation organisateur"><h2>Navigation rapide</h2><div class="admin-nav-links">' +
+      nav.map(function (item) { return '<a class="chip" href="#' + item[0] + '">' + item[1] + '</a>'; }).join('') +
+      '</div></nav>';
 
     /* tournoi */
-    h += '<section class="panel"><h2>Tournoi</h2>';
+    h += '<section class="panel" id="admin-tournoi"><h2>Tournoi</h2>';
     if (!A.t) {
       h += '<form id="createForm" class="stack"><p class="lead">Donne un nom au tournoi. Les inscriptions s\'ouvrent tout de suite.</p>' +
         '<label for="tname">Nom du tournoi</label><input id="tname" maxlength="60" placeholder="Ex. Battle d\'openings, saison 1" required value="' + esc(draft.tname) + '">' +
@@ -98,7 +112,7 @@
     var activeVideos = A.moderationVideos || [];
     var archiveMo = ((storage.archives || []).reduce(function(n,x){return n+Number(x.bytes||0);},0) / 1048576).toFixed(1);
     var activeMo = (activeVideos.reduce(function(n,v){return n+Number(v.size||0);},0) / 1048576).toFixed(1);
-    h += '<section class="panel"><h2>Tableau de bord</h2><div class="profile-stats">' +
+    h += '<section class="panel" id="admin-dashboard"><h2>Tableau de bord</h2><div class="profile-stats">' +
       '<div><strong>' + Number(A.stats && A.stats.entrants || 0) + '</strong><span>Participants inscrits</span></div>' +
       '<div><strong>' + Number(A.stats && A.stats.codes || 0) + '</strong><span>Codes générés</span></div>' +
       '<div><strong>' + Number(A.stats && A.stats.voted || 0) + '</strong><span>Joueurs ayant voté</span></div>' +
@@ -109,7 +123,7 @@
       '</div></section>';
 
     /* modération vidéo */
-    h += '<section class="panel"><h2>Modération des vidéos</h2><p class="lead">Supprime les vidéos qui enfreignent le règlement : contenu adulte, violence explicite, contenu choquant ou autre contenu interdit. Le fichier et ses références sont supprimés, y compris dans les archives. Les votes, scores et résultats restent conservés.</p>';
+    h += '<section class="panel" id="admin-moderation"><h2>Modération des vidéos</h2><p class="lead">Supprime les vidéos qui enfreignent le règlement : contenu adulte, violence explicite, contenu choquant ou autre contenu interdit. Le fichier et ses références sont supprimés, y compris dans les archives. Les votes, scores et résultats restent conservés.</p>';
     if (!activeVideos.length) h += '<p class="note">Aucune vidéo disponible à modérer.</p>';
     activeVideos.forEach(function(v) {
       var size = v.size ? (v.size / 1048576).toFixed(1) + ' Mo' : 'Taille inconnue';
@@ -125,7 +139,7 @@
 
     /* codes */
     var unused = A.codes.filter(function (c) { return !c.used; });
-    h += '<section class="panel"><h2>Codes d\'invitation</h2>' +
+    h += '<section class="panel" id="admin-codes"><h2>Codes d\'invitation</h2>' +
       '<p class="lead">Un code par personne, à envoyer en privé. Pour ce tournoi vidéo, chaque code vote une fois par affrontement (3 votes par duel). Le nombre de codes émis est affiché publiquement : n\'en génère pas plus que de membres dans ton groupe.</p>' +
       '<form id="codesForm" class="row"><label for="count" class="note">Combien de codes ?</label><input id="count" type="number" min="1" max="300" value="' + esc(draft.count) + '" required>' +
       '<button class="btn primary" type="submit"' + dis + '>Générer</button></form>';
@@ -138,7 +152,7 @@
     h += '</section>';
 
     /* déroulement */
-    h += '<section class="panel"><h2>Déroulement</h2>';
+    h += '<section class="panel" id="admin-deroulement"><h2>Déroulement</h2>';
     if (!A.t) {
       h += '<p class="lead">Crée d\'abord le tournoi.</p>';
     } else if (A.t.status === 'inscription') {
@@ -188,7 +202,7 @@
     h += '</section>';
 
     /* bonus manuels */
-    h += '<section class="panel"><h2>Bonus et pénalités</h2><p class="lead">Tu décides librement des points à ajouter ou retirer. 3 points sont attribués automatiquement par duel remporté ; les qualifications d’office ne rapportent aucun point. Chaque ajustement est conservé dans l’historique.</p>';
+    h += '<section class="panel" id="admin-bonus"><h2>Bonus et pénalités</h2><p class="lead">Tu décides librement des points à ajouter ou retirer. 3 points sont attribués automatiquement par duel remporté ; les qualifications d’office ne rapportent aucun point. Chaque ajustement est conservé dans l’historique.</p>';
     if (A.players && A.players.length) {
       h += '<form id="bonusForm" class="stack"><label for="bonusPlayer">Participant</label><select id="bonusPlayer" name="playerId" required>' +
         A.players.map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('') +
@@ -204,7 +218,7 @@
     h += '</section>';
 
     /* nettoyage des archives audio */
-    h += '<section class="panel"><h2>Libérer le stockage audio et vidéo</h2><p class="lead">Supprime uniquement les fichiers audio et vidéo des tournois archivés sélectionnés. Les résultats, les votes, les vainqueurs et les statistiques restent conservés. Les fichiers utilisés par le tournoi actif ou une autre archive sont protégés.</p>';
+    h += '<section class="panel" id="admin-stockage"><h2>Libérer le stockage audio et vidéo</h2><p class="lead">Supprime uniquement les fichiers audio et vidéo des tournois archivés sélectionnés. Les résultats, les votes, les vainqueurs et les statistiques restent conservés. Les fichiers utilisés par le tournoi actif ou une autre archive sont protégés.</p>';
     if (storageErr) h += '<p class="err">' + esc(storageErr) + '</p>';
     var archives = storage && storage.archives ? storage.archives : [];
     if (!archives.length) h += '<p class="note">Aucun tournoi archivé pour le moment.</p>';
@@ -224,13 +238,13 @@
 
     /* suppression du tournoi non commencé */
     if (A.t && A.t.status === 'inscription' && Object.keys(A.matches || {}).length === 0) {
-      h += '<section class="panel"><h2>Supprimer ce tournoi</h2><p class="lead">Réservé à un tournoi dont les inscriptions sont ouvertes et dont aucun affrontement n’a commencé. Le tournoi et ses vidéos seront supprimés. Les codes des membres et les anciennes archives seront conservés.</p>' +
+      h += '<section class="panel" id="admin-suppression"><h2>Supprimer ce tournoi</h2><p class="lead">Réservé à un tournoi dont les inscriptions sont ouvertes et dont aucun affrontement n’a commencé. Le tournoi et ses vidéos seront supprimés. Les codes des membres et les anciennes archives seront conservés.</p>' +
         '<form id="deleteUnstartedForm" class="stack"><label for="deleteTournamentConfirm">Tape SUPPRIMER TOURNOI pour confirmer</label><input id="deleteTournamentConfirm" name="confirm" autocomplete="off" required>' +
         '<button class="btn small" type="submit"' + dis + '>Supprimer définitivement ce tournoi</button></form></section>';
     }
     /* nouveau tournoi */
     if (A.t) {
-      h += '<section class="panel"><h2>Nouveau tournoi</h2><p class="lead">Archive le tournoi actuel (inscriptions, duels, votes) et repart de zéro. Les codes d\'invitation sont conservés : les membres gardent le leur.</p>' +
+      h += '<section class="panel" id="admin-nouveau"><h2>Nouveau tournoi</h2><p class="lead">Archive le tournoi actuel (inscriptions, duels, votes) et repart de zéro. Les codes d\'invitation sont conservés : les membres gardent le leur.</p>' +
         '<form id="resetForm" class="row"><label for="confirm" class="note">Tape NOUVEAU</label><input id="confirm" autocomplete="off" value="' + esc(draft.confirm) + '">' +
         '<button class="btn small" type="submit"' + dis + '>Archiver et recommencer</button></form></section>';
     }
