@@ -74,6 +74,11 @@
   }
 
   function render(force) {
+    // Keep the admin moderation player attached while it is playing.
+    // The admin dashboard refreshes periodically; replacing #app interrupts
+    // the active media element on some mobile browsers.
+    var activeMedia = document.querySelector('#app video, #app audio');
+    if (activeMedia && !activeMedia.paused && !activeMedia.ended) return;
     var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, health, healthErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
