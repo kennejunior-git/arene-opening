@@ -405,6 +405,27 @@
       e.textContent = v >= 60 && v % 60 === 0 ? (v / 60) + ' h' : v + ' minutes';
     });
   }
+  function renderCountdown() {
+    var el = $('countdown');
+    if (!el) return;
+    var startAt = S && S.t && Number(S.t.startAt);
+    if (!startAt) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    var left = startAt - now();
+    if (left <= 0) {
+      el.innerHTML = '<h2>Le tournoi commence !</h2><p class="lead">Le lancement est arrivé. Les votes et les duels restent contrôlés par l’organisateur.</p>';
+      return;
+    }
+    var total = Math.floor(left / 1000);
+    var days = Math.floor(total / 86400), hours = Math.floor((total % 86400) / 3600);
+    var minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
+    el.innerHTML = '<h2>Compte à rebours officiel</h2><p class="lead">Début prévu le ' +
+      esc(new Date(startAt).toLocaleString('fr-FR', { timeZone: 'Africa/Douala', dateStyle: 'full', timeStyle: 'short' })) +
+      '</p><div class="stats"><span class="chip">' + days + ' jour(s)</span><span class="chip">' +
+      hours + ' heure(s)</span><span class="chip">' + minutes + ' minute(s)</span><span class="chip">' +
+      seconds + ' seconde(s)</span></div>';
+  }
+
   function renderPrizeAnnouncement() {
     var el = $('prizeAnnouncement');
     if (!el) return;
@@ -418,7 +439,7 @@
       (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
   }
   function renderNotifications(){var el=$('notifications');if(!el)return;var list=S&&S.me&&S.me.notifications||[];el.hidden=!S||!S.me||!S.me.name;if(el.hidden)return;var unread=list.filter(n=>!n.read).length;el.innerHTML='<div class="row"><h2>Mes notifications'+(unread?' · '+unread+' nouvelle(s)':'')+'</h2>'+(unread?'<button class="btn small" id="readNotifications">Tout marquer comme lu</button>':'')+'</div><div class="row">'+browserNotificationControl()+'</div>'+(list.length?'<ul class="log">'+list.slice(0,20).map(n=>'<li><strong>'+esc(n.title)+'</strong><span>'+esc(n.message)+'</span><small>'+fmtDate(n.at)+(n.read?' · Lu':' · Nouveau')+'</small></li>').join('')+'</ul>':'<p class="note">Tu n’as pas encore de notification.</p>');}
-  function renderAll() { renderRules(); renderHead(); renderNotice(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
+  function renderAll() { renderRules(); renderHead(); renderNotice(); renderCountdown(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
@@ -533,6 +554,7 @@
   });
 
   setInterval(function () {
+    renderCountdown();
     var t = now();
     document.querySelectorAll('[data-closes]').forEach(function (s) {
       var left = Number(s.getAttribute('data-closes')) - t;
