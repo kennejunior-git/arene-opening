@@ -48,8 +48,8 @@
   function applyAdminScreen() {
     var groups = {
       overview: ['admin-centre','admin-dashboard'],
-      tournament: ['admin-tournoi','admin-deroulement','admin-bonus','admin-nouveau','admin-suppression'],
-      participants: ['admin-codes','admin-moderation','admin-notifications'],
+      tournament: ['admin-tournoi','admin-codes','admin-deroulement','admin-bonus','admin-nouveau','admin-suppression'],
+      participants: ['admin-moderation','admin-notifications'],
       system: ['admin-surveillance','admin-stockage']
     };
     var allowed = groups[selectedAdminScreen] || groups.overview;
@@ -59,7 +59,7 @@
     var meta = {
       overview: ['Vue générale', 'Les indicateurs essentiels et l’activité du tournoi en un coup d’œil.'],
       tournament: ['Gestion du tournoi', 'Configuration, déroulement des affrontements et décisions sportives.'],
-      participants: ['Participants', 'Codes, vidéos à modérer et communication avec les membres.'],
+      participants: ['Participants', 'Vidéos à modérer et communication avec les membres.'],
       system: ['État du système', 'Surveillance du serveur, de la base et du stockage des médias.']
     }[selectedAdminScreen] || ['Administration', ''];
     var title = document.getElementById('adminScreenTitle');
