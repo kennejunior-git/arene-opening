@@ -7,7 +7,7 @@
     });
   };
 
-  var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '';
+  var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '', leaderboardData = null;
   var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1, registrationBusy = false, registrationHold = false;
   var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', clos: 'Terminé' };
 
@@ -98,6 +98,7 @@
       var nextState = await api('/api/state');
       syncBrowserNotifications(nextState);
       S = nextState;
+      try { leaderboardData = await api('/api/community'); } catch (rankingError) { /* Le classement reste indisponible sans bloquer l’arène. */ }
       offset = S.now - Date.now();
       loadErr = '';
     } catch (e) { loadErr = 'Impossible de joindre le serveur. Nouvel essai en cours…'; }
@@ -144,6 +145,22 @@
     }
     if (S && S.stats.codes) h += '<span class="chip">' + S.stats.codes + ' codes émis · ' + S.stats.voted + ' ont voté</span>';
     $('stats').innerHTML = h;
+  }
+
+  function renderLiveLeaderboard() {
+    var el = $('liveLeaderboard');
+    if (!el) return;
+    if (!S || !S.t || S.t.status === 'inscription') { el.hidden = true; return; }
+    el.hidden = false;
+    var rows = leaderboardData && Array.isArray(leaderboardData.season) ? leaderboardData.season.slice(0, 10) : [];
+    var closed = S.matches.filter(function (m) { return m.status === 'clos' && !m.bye; }).length;
+    var html = '<h2>Classement en direct</h2><p class="lead">Mis à jour automatiquement · ' + closed + ' duel(s) terminé(s)</p>';
+    if (!rows.length) html += '<p class="note">Le classement apparaîtra dès que les premiers duels seront terminés.</p>';
+    else html += '<ol class="log">' + rows.map(function (p, i) {
+      return '<li><strong>' + (i + 1) + '. ' + esc(p.name) + '</strong><span>' + Number(p.seasonPoints || 0) +
+        ' points · ' + Number(p.seasonWins || 0) + ' victoire(s)</span></li>';
+    }).join('') + '</ol>';
+    el.innerHTML = html;
   }
 
   function renderNotice() {
@@ -439,7 +456,7 @@
       (Number(a.third || 0) > 0 ? '<li>3e place : <strong>' + Number(a.third).toLocaleString('fr-FR') + ' FCFA</strong> (déterminée par un duel spécial)</li>' : '') + '</ul>';
   }
   function renderNotifications(){var el=$('notifications');if(!el)return;var list=S&&S.me&&S.me.notifications||[];el.hidden=!S||!S.me||!S.me.name;if(el.hidden)return;var unread=list.filter(n=>!n.read).length;el.innerHTML='<div class="row"><h2>Mes notifications'+(unread?' · '+unread+' nouvelle(s)':'')+'</h2>'+(unread?'<button class="btn small" id="readNotifications">Tout marquer comme lu</button>':'')+'</div><div class="row">'+browserNotificationControl()+'</div>'+(list.length?'<ul class="log">'+list.slice(0,20).map(n=>'<li><strong>'+esc(n.title)+'</strong><span>'+esc(n.message)+'</span><small>'+fmtDate(n.at)+(n.read?' · Lu':' · Nouveau')+'</small></li>').join('')+'</ul>':'<p class="note">Tu n’as pas encore de notification.</p>');}
-  function renderAll() { renderRules(); renderHead(); renderNotice(); renderCountdown(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
+  function renderAll() { renderRules(); renderHead(); renderNotice(); renderCountdown(); renderLiveLeaderboard(); renderPrizeAnnouncement(); renderLogin(); renderNotifications(); renderReg(); renderChamp(); renderDuels(); renderLog(); }
 
   /* ---------- actions ---------- */
   async function castVote(mid, slot) {
