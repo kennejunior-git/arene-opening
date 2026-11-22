@@ -8,7 +8,7 @@
   };
 
   var S = null, offset = 0, loadErr = '', voting = false, voteMsg = '';
-  var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1, registrationBusy = false;
+  var regMsg = '', regErr = '', loginErr = '', lastRegKey = '', lastLoginKey = '', lastExp = -1, registrationBusy = false, registrationHold = false;
   var STATUS = { attente: 'Pas encore ouvert', ouvert: 'Vote ouvert', clos: 'Terminé' };
 
   function now() { return Date.now() + offset; }
@@ -150,7 +150,7 @@
 
   
   function renderReg() {
-    if (registrationBusy) return;
+    if (registrationBusy || registrationHold) return;
     var el = $('reg');
     if (!S || !S.t || !S.me) { el.hidden = true; lastRegKey = ''; return; }
     var key = JSON.stringify([S.t.status, S.t.mediaMode, S.me.entry, S.me.videoUploads, regMsg, regErr, S.matches.length]);
@@ -441,8 +441,9 @@
       lastLoginKey = ''; await load();
     } else if (f.id === 'regForm') {
       regMsg = ''; regErr = '';
-      var btn = f.querySelector('button[type=submit]'), upmsg = $('upmsg');
+      var btn = f.querySelector('button[type=submit]'), upmsg = $('upmsg'), regSuccess = false;
       try {
+        registrationHold = false;
         registrationBusy = true;
         btn.disabled = true;
         if (S.t && S.t.mediaMode === 'video3') {
@@ -472,8 +473,14 @@
           await api('/api/entry', d);
         }
         regMsg = 'Inscription enregistrée.';
-      } catch (er) { regErr = er.message; }
-      btn.disabled = false; registrationBusy = false; lastRegKey = ''; await load();
+        regSuccess = true;
+      } catch (er) {
+        regErr = er.message || 'Envoi impossible. Vérifie ta connexion et réessaie.';
+        if (upmsg) { upmsg.textContent = regErr + ' Tes champs et fichiers restent en place : tu peux réessayer sans tout recommencer.'; upmsg.className = 'err'; }
+      }
+      btn.disabled = false; registrationBusy = false;
+      if (regSuccess) { registrationHold = false; lastRegKey = ''; await load(); }
+      else { registrationHold = true; }
     }
   });
 
