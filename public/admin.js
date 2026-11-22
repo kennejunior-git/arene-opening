@@ -50,6 +50,7 @@
     if (key === lastKey) return;
     lastKey = key;
     $('logout').hidden = !authed;
+    $('adminBottomNav').hidden = !authed;
     var el = $('app');
     if (!authed) {
       el.innerHTML = '<section class="panel"><h2>Connexion</h2><form id="loginForm" class="stack"><label for="pw">Mot de passe organisateur</label>' +
