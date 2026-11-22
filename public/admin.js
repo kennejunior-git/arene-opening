@@ -77,8 +77,8 @@
     // Keep the admin moderation player attached while it is playing.
     // The admin dashboard refreshes periodically; replacing #app interrupts
     // the active media element on some mobile browsers.
-    var activeMedia = document.querySelector('#app video, #app audio');
-    if (activeMedia && !activeMedia.paused && !activeMedia.ended) return;
+    var activeMedia = document.querySelectorAll('#app video, #app audio');
+    if (Array.prototype.some.call(activeMedia, function (media) { return !media.paused && !media.ended; })) return;
     var key = JSON.stringify([authed, A && A.t, A && A.entrantCount, A && A.stats, A && A.codes, A && A.players, A && A.bonuses, A && A.prizeConfig, A && A.prizePayouts, A && A.moderationVideos, storage, storageErr, health, healthErr, A && A.matches.map(function (m) { return [m.id, m.status, m.closesAt, m.votes, m.extensions]; }), busy, err, info, armed]);
     if (!force && key === lastKey) return;
     if (key === lastKey) return;
@@ -442,8 +442,15 @@
     else if (f === 'videoModerationForm') { var vf = new FormData(e.target); if (vf.get('confirm') !== 'SUPPRIMER VIDEO') { err = 'Confirmation incorrecte : tape SUPPRIMER VIDEO.'; render(); return; } if (!window.confirm('Cette vidéo sera supprimée définitivement, y compris de ses archives. Continuer ?')) return; run(function () { return api('/api/admin/video/delete', { file:vf.get('file'), reason:vf.get('reason'), confirm:vf.get('confirm') }); }, 'Vidéo supprimée. Les votes et résultats sont conservés.'); }
   });
 
-  setInterval(function () { if (authed && !busy) load(); }, 10000);
-  setInterval(function () { if (authed && !busy) { healthCheckedAt = 0; load(); } }, 30000);
+  function adminMediaPlaying() {
+    return Array.prototype.some.call(document.querySelectorAll('#app video, #app audio'), function (media) {
+      return !media.paused && !media.ended;
+    });
+  }
+  // Pause admin polling while any moderation video is playing. This avoids
+  // replacing another video element during playback on mobile browsers.
+  setInterval(function () { if (authed && !busy && !adminMediaPlaying()) load(); }, 10000);
+  setInterval(function () { if (authed && !busy && !adminMediaPlaying()) { healthCheckedAt = 0; load(); } }, 30000);
   setInterval(function () {
     if (!A) return;
     document.querySelectorAll('[data-closes]').forEach(function (sp) {
@@ -451,7 +458,7 @@
       if (left > 0) sp.textContent = fmtLeft(left);
     });
     var c = A.matches.filter(function (m) { return m.status === 'ouvert' && nowMs() >= m.closesAt; }).length;
-    if (c !== lastExp) { lastExp = c; if (c && authed && !busy) load(); }
+    if (c !== lastExp) { lastExp = c; if (c && authed && !busy && !adminMediaPlaying()) load(); }
   }, 1000);
   render(true);
   load();
