@@ -394,6 +394,10 @@
     // interrupts playback on mobile browsers even if currentTime is restored.
     var existingAudio = Array.prototype.slice.call(el.querySelectorAll('audio'));
     var existingVideo = Array.prototype.slice.call(el.querySelectorAll('video'));
+    // Do not rebuild the duel DOM while a media stream is playing.
+    // Replacing innerHTML, even if the same media node is moved back later,
+    // can interrupt playback on mobile browsers (notably Android/Chrome).
+    if (existingAudio.concat(existingVideo).some(function (media) { return !media.paused && !media.ended; })) return;
     if (!S || !S.t) { el.innerHTML = ''; return; }
     if (S.t.status === 'inscription') {
       el.innerHTML = '<h2>Duels</h2><p class="lead">Les duels apparaîtront ici après le tirage au sort, avec les deux openings face à face.</p>';
