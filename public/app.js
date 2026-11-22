@@ -427,6 +427,16 @@
       button.textContent = picked ? 'Ton vote ✓' : 'Voter pour celui-ci';
       button.setAttribute('aria-pressed', picked ? 'true' : 'false');
       button.disabled = voting || !eligible(match);
+      var live = match.liveTally, resultBox = button.parentNode && button.parentNode.querySelector('.res');
+      if (live && resultBox) {
+        var total = Number(live.a || 0) + Number(live.b || 0);
+        var count = slot === match.a.slot ? Number(live.a || 0) : Number(live.b || 0);
+        var pct = total ? Math.round(100 * count / total) : 0;
+        var fill = resultBox.querySelector('.fill'), nums = resultBox.querySelectorAll('.nums span');
+        if (fill) fill.style.width = pct + '%';
+        if (nums[0]) nums[0].textContent = count + ' voix en direct';
+        if (nums[1]) nums[1].textContent = pct + ' %';
+      }
     });
   }
 
