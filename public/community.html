@@ -8,10 +8,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body data-screen="community">
 <main>
   <header class="top">
-    <div class="topbar"><p class="eyebrow">Communauté · profils et palmarès</p><nav class="site-nav" aria-label="Navigation principale"><a href="/">Arène</a><a href="/stats">Statistiques</a><a href="/community" aria-current="page">Communauté</a></nav></div>
+    <div class="topbar"><p class="eyebrow">Communauté · profils et palmarès</p><nav class="site-nav" aria-label="Navigation principale"><a href="/">Accueil</a><a href="/duels">Duels</a><a href="/stats">Classement</a><a href="/community" aria-current="page">Communauté</a><a href="/profile">Profil</a></nav></div>
     <h1>La communauté</h1>
     <p class="hero-copy">Les joueurs, leurs victoires et leurs parcours. Découvre les profils et suis les meilleurs de l’arène.</p>
     <p class="lead">3 points par duel remporté. Les qualifications d'office ne rapportent pas de point.</p>
@@ -21,6 +21,8 @@
   <section class="sec"><h2>Classement général</h2><div id="alltime"></div></section>
   <p id="notice" class="note" role="status"></p>
 </main>
+<nav class="bottom-nav player-bottom-nav" aria-label="Navigation principale">
+<a href="/" data-tab="home"><span class="nav-icon">⌂</span><span>Accueil</span></a><a href="/duels" data-tab="duels"><span class="nav-icon">⚔</span><span>Duels</span></a><a href="/stats" data-tab="ranking"><span class="nav-icon">🏆</span><span>Classement</span></a><a href="/community" data-tab="community"><span class="nav-icon">◎</span><span>Communauté</span></a></nav>
 <script src="/community.js"></script>
 </body>
 </html>
