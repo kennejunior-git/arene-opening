@@ -8,12 +8,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@600;800&display=swap">
 <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body data-screen="ranking">
 <main>
   <header class="top">
     <div class="topbar">
-      <p class="eyebrow">Statistiques du tournoi</p>
-      <a href="/" class="chip">Retour aux duels</a>
+      <p class="eyebrow">Classement et statistiques</p>
+      <a href="/duels" class="chip">Voir les duels</a>
     </div>
     <h1 id="ttl">Statistiques</h1>
     <div class="stats" id="stats"></div>
@@ -23,6 +23,8 @@
   <section id="donesec" class="sec"></section>
   <section id="numsec" class="sec"></section>
 </main>
+<nav class="bottom-nav player-bottom-nav" aria-label="Navigation principale">
+<a href="/" data-tab="home"><span class="nav-icon">⌂</span><span>Accueil</span></a><a href="/duels" data-tab="duels"><span class="nav-icon">⚔</span><span>Duels</span></a><a href="/stats" data-tab="ranking"><span class="nav-icon">🏆</span><span>Classement</span></a><a href="/community" data-tab="community"><span class="nav-icon">◎</span><span>Communauté</span></a></nav>
 <script src="/stats.js"></script>
 </body>
 </html>
