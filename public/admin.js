@@ -56,10 +56,21 @@
     document.querySelectorAll('#app section[id^="admin-"]').forEach(function (section) {
       section.hidden = allowed.indexOf(section.id) === -1;
     });
+    var meta = {
+      overview: ['Vue générale', 'Les indicateurs essentiels et l’activité du tournoi en un coup d’œil.'],
+      tournament: ['Gestion du tournoi', 'Configuration, déroulement des affrontements et décisions sportives.'],
+      participants: ['Participants', 'Codes, vidéos à modérer et communication avec les membres.'],
+      system: ['État du système', 'Surveillance du serveur, de la base et du stockage des médias.']
+    }[selectedAdminScreen] || ['Administration', ''];
+    var title = document.getElementById('adminScreenTitle');
+    var subtitle = document.getElementById('adminScreenSubtitle');
+    if (title) title.textContent = meta[0];
+    if (subtitle) subtitle.textContent = meta[1];
     document.querySelectorAll('[data-admin-tab]').forEach(function (button) {
       var active = button.getAttribute('data-admin-tab') === selectedAdminScreen;
       button.setAttribute('aria-current', active ? 'page' : 'false');
     });
+    document.body.setAttribute('data-admin-screen', selectedAdminScreen);
   }
 
   function render(force) {
