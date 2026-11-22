@@ -45,16 +45,26 @@
     return 'Tour ' + r;
   }
 
-  function uploadVideo(file, slot, onProgress) {
-    return new Promise(function (resolve, reject) {
-      var x = new XMLHttpRequest();
-      x.open('POST', '/api/video/' + slot);
-      x.setRequestHeader('Content-Type', 'application/octet-stream');
-      x.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(Math.round(100 * e.loaded / e.total)); };
-      x.onload = function () { var j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} if (x.status >= 200 && x.status < 300) resolve(j); else reject(new Error(j.error || 'Envoi vidéo impossible.')); };
-      x.onerror = function () { reject(new Error('Envoi interrompu. Vérifie ta connexion et réessaie.')); };
-      x.send(file);
-    });
+  async function uploadVideo(file, slot, onProgress) {
+    var chunkSize=5*1024*1024, fingerprint=[slot,file.name,file.size,file.lastModified].join(':');
+    var storageKey='arene-video-upload:'+fingerprint, saved=null;
+    try{saved=JSON.parse(localStorage.getItem(storageKey)||'null');}catch(e){}
+    var session=saved&&/^[a-f0-9]{32}$/.test(saved.session||'')?saved.session:'';
+    if(!session){var bytes=new Uint8Array(16);if(crypto&&crypto.getRandomValues)crypto.getRandomValues(bytes);else for(var z=0;z<16;z++)bytes[z]=Math.floor(Math.random()*256);session=Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');saved={session:session,uploadId:''};}
+    async function jsonPost(url,body){var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});var j={};try{j=await r.json();}catch(e){}if(!r.ok)throw new Error(j.error||'Erreur réseau.');return j;}
+    var init=await jsonPost('/api/video/chunk/init/'+slot,{size:file.size,session:session,uploadId:saved.uploadId||''});
+    saved.uploadId=init.uploadId;try{localStorage.setItem(storageKey,JSON.stringify(saved));}catch(e){}
+    var done={};(init.parts||[]).forEach(p=>done[Number(p)]=true);
+    var total=Math.ceil(file.size/chunkSize);
+    for(var part=1;part<=total;part++){
+      var start=(part-1)*chunkSize,end=Math.min(file.size,start+chunkSize);
+      if(done[part]){onProgress(Math.min(99,Math.round(100*end/file.size)));continue;}
+      var attempt=0,ok=false;
+      while(!ok&&attempt<5){attempt++;try{await new Promise(function(resolve,reject){var x=new XMLHttpRequest();x.open('POST','/api/video/chunk/part/'+slot+'/'+session+'/'+part);x.setRequestHeader('Content-Type','application/octet-stream');x.setRequestHeader('X-Upload-Id',saved.uploadId);x.timeout=120000;x.onload=function(){var j={};try{j=JSON.parse(x.responseText);}catch(e){}if(x.status>=200&&x.status<300)resolve(j);else reject(new Error(j.error||'Bloc refusé.'));};x.onerror=function(){reject(new Error('Connexion interrompue.'));};x.ontimeout=function(){reject(new Error('Délai dépassé.'));};x.send(file.slice(start,end));});ok=true;}catch(e){if(attempt===5)throw new Error('Connexion instable sur le bloc '+part+'. Tu peux réessayer : les blocs reçus seront conservés.');await new Promise(r=>setTimeout(r,Math.min(8000,attempt*1500)));}}
+      onProgress(Math.min(99,Math.round(100*end/file.size)));
+    }
+    var result=await jsonPost('/api/video/chunk/complete/'+slot+'/'+session,{size:file.size,uploadId:saved.uploadId});
+    try{localStorage.removeItem(storageKey);}catch(e){}onProgress(100);return result;
   }
 
   function uploadAudio(file, onProgress) {
